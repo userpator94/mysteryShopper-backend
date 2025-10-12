@@ -22,12 +22,34 @@ cd mysteryShopperBE
 npm install
 ```
 
-3. Скопируйте файл переменных окружения:
+3. Создайте файл `.env` с переменными окружения:
 ```bash
-cp .env.example .env
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=msDB
+DB_USER=postgres
+DB_PASSWORD=password
+
+# CORS Configuration
+CORS_ORIGIN=http://localhost:3000
 ```
 
-4. Отредактируйте `.env` файл под ваши нужды.
+4. Настройте PostgreSQL базу данных:
+```bash
+# Создайте базу данных
+createdb msDB
+
+# Выполните SQL скрипт для создания таблиц
+psql -d msDB -f database_schema.sql
+
+# Заполните таблицы тестовыми данными
+psql -d msDB -f seed_data.sql
+```
 
 ### Запуск
 

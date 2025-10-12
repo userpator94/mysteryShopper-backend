@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 import apiRoutes from './routes';
+import { testConnection } from './config/database';
 
 // Load environment variables
 dotenv.config();
@@ -54,11 +55,28 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+const startServer = async () => {
+  try {
+    // Test database connection
+    const dbConnected = await testConnection();
+    if (!dbConnected) {
+      console.error('❌ Failed to connect to database. Server will not start.');
+      process.exit(1);
+    }
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server is running on port ${PORT}`);
+      console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🗄️ Database: ${process.env.DB_NAME || 'msDB'} on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 export default app;
 

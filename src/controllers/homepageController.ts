@@ -1,155 +1,32 @@
 import { Request, Response } from 'express';
 import { ApiResponse, Banner, Offer, Image, Author } from '../types';
+import { dbService } from '../services/databaseService';
 
-// Mock data - в реальном приложении это будет из базы данных
-const mockBanner: Banner = {
-  id: 'banner-1',
-  imageId: 'img-banner-1',
-  link: 'https://example.com/special-offer',
-  text: 'Получите скидку 20% на первый mystery shop!',
-  isActive: true,
-  createdAt: new Date('2024-01-01'),
-  updatedAt: new Date('2024-01-01')
-};
 
-const mockOffers: Offer[] = [
-  {
-    id: 'offer-1',
-    imageId: 'img-offer-1',
-    title: 'Проверка автомойки',
-    description: 'Детальная оценка с фотографиями и подробным отчетом',
-    numericInfo: 200,
-    tags: ['популярно', 'новое'],
-    isFavourite: true,
-    isPromo: true,
-    authorId: 'author-1',
-    startDate: new Date('2023-01-01'),
-    endDate: new Date('2025-12-31'),
-    isActive: true,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01')
-  },
-  {
-    id: 'offer-2',
-    imageId: 'img-offer-2',
-    title: 'Премиум Оценки',
-    description: 'Детальная оценка с фотографиями и подробным отчетом',
-    numericInfo: 95,
-    tags: ['популярно', 'качество'],
-    isFavourite: false,
-    isPromo: false,
-    authorId: 'author-2',
-    startDate: new Date('2023-02-01'),
-    endDate: new Date('2025-11-30'),
-    isActive: true,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01')
-  },
-  {
-    id: 'offer-3',
-    imageId: 'img-offer-3',
-    title: 'Проверка платежа',
-    description: 'Купить по одному товару с карт Тинькофф и Альфа-Банк',
-    numericInfo: 250,
-    tags: ['быстро', 'онлайн'],
-    isFavourite: true,
-    isPromo: true,
-    authorId: 'author-1',
-    startDate: new Date('2023-03-01'),
-    endDate: new Date('2025-10-31'),
-    isActive: true,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01')
-  }
-];
-
-const mockAuthors: Record<string, Author> = {
-  'author-1': {
-    id: 'author-1',
-    name: 'Анна Петрова',
-    email: 'anna.petrova@company.com',
-    company: 'Retail Solutions',
-    avatarId: 'img-avatar-1',
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01')
-  },
-  'author-2': {
-    id: 'author-2',
-    name: 'Михаил Иванов',
-    email: 'mikhail.ivanov@business.com',
-    company: 'Business Analytics',
-    avatarId: 'img-avatar-2',
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01')
-  }
-};
-
-const mockImages: Record<string, Image> = {
-  'img-banner-1': {
-    id: 'img-banner-1',
-    filename: 'banner-special-offer.jpg',
-    originalName: 'special-offer-banner.jpg',
-    mimeType: 'image/jpeg',
-    size: 245760,
-    url: '/images/banner-special-offer.jpg',
-    createdAt: new Date('2024-01-01')
-  },
-  'img-offer-1': {
-    id: 'img-offer-1',
-    filename: 'offer-fast-shops.jpg',
-    originalName: 'fast-shops-offer.jpg',
-    mimeType: 'image/jpeg',
-    size: 189440,
-    url: '/images/offer-fast-shops.jpg',
-    createdAt: new Date('2024-01-01')
-  },
-  'img-offer-2': {
-    id: 'img-offer-2',
-    filename: 'offer-premium-ratings.jpg',
-    originalName: 'premium-ratings-offer.jpg',
-    mimeType: 'image/jpeg',
-    size: 201728,
-    url: '/images/offer-premium-ratings.jpg',
-    createdAt: new Date('2024-01-01')
-  },
-  'img-offer-3': {
-    id: 'img-offer-3',
-    filename: 'offer-express-audit.jpg',
-    originalName: 'express-audit-offer.jpg',
-    mimeType: 'image/jpeg',
-    size: 175360,
-    url: '/images/offer-express-audit.jpg',
-    createdAt: new Date('2024-01-01')
-  },
-  'img-avatar-1': {
-    id: 'img-avatar-1',
-    filename: 'avatar-anna.jpg',
-    originalName: 'anna-avatar.jpg',
-    mimeType: 'image/jpeg',
-    size: 45632,
-    url: '/images/avatar-anna.jpg',
-    createdAt: new Date('2024-01-01')
-  },
-  'img-avatar-2': {
-    id: 'img-avatar-2',
-    filename: 'avatar-mikhail.jpg',
-    originalName: 'mikhail-avatar.jpg',
-    mimeType: 'image/jpeg',
-    size: 52304,
-    url: '/images/avatar-mikhail.jpg',
-    createdAt: new Date('2024-01-01')
-  }
-};
-
-export const getBanner = (req: Request, res: Response): void => {
+export const getBanner = async (req: Request, res: Response): Promise<void> => {
   try {
+    const banner = await dbService.getBanner();
+    
+    if (!banner) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          message: 'Banner not found',
+          statusCode: 404
+        }
+      };
+      res.status(404).json(response);
+      return;
+    }
+
     const response: ApiResponse<Banner> = {
       success: true,
-      data: mockBanner
+      data: banner
     };
     
     res.json(response);
   } catch (error) {
+    console.error('Error fetching banner:', error);
     const response: ApiResponse = {
       success: false,
       error: {
@@ -161,46 +38,27 @@ export const getBanner = (req: Request, res: Response): void => {
   }
 };
 
-export const getOffers = (req: Request, res: Response): void => {
+export const getOffers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { isFavourite, isPromo, authorId, active } = req.query;
     
-    let filteredOffers = [...mockOffers];
-    
-    // Фильтрация по избранным
-    if (isFavourite === 'true') {
-      filteredOffers = filteredOffers.filter(offer => offer.isFavourite);
-    }
-    
-    // Фильтрация по промо
-    if (isPromo === 'true') {
-      filteredOffers = filteredOffers.filter(offer => offer.isPromo);
-    } else if (isPromo === 'false') {
-      filteredOffers = filteredOffers.filter(offer => !offer.isPromo);
-    }
-    
-    // Фильтрация по автору
-    if (authorId) {
-      filteredOffers = filteredOffers.filter(offer => offer.authorId === authorId);
-    }
-    
-    // Фильтрация по активности (по умолчанию показываем только активные)
-    if (active !== 'false') {
-      const now = new Date();
-      filteredOffers = filteredOffers.filter(offer => 
-        offer.isActive && 
-        offer.startDate <= now && 
-        offer.endDate >= now
-      );
-    }
+    const filters = {
+      isFavourite: isFavourite === 'true' ? true : undefined,
+      isPromo: isPromo === 'true' ? true : isPromo === 'false' ? false : undefined,
+      authorId: authorId as string,
+      active: active !== 'false'
+    };
+
+    const offers = await dbService.getOffersWithFilters(filters);
     
     const response: ApiResponse<Offer[]> = {
       success: true,
-      data: filteredOffers
+      data: offers
     };
     
     res.json(response);
   } catch (error) {
+    console.error('Error fetching offers:', error);
     const response: ApiResponse = {
       success: false,
       error: {
@@ -212,7 +70,7 @@ export const getOffers = (req: Request, res: Response): void => {
   }
 };
 
-export const getOfferById = (req: Request, res: Response): void => {
+export const getOfferById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -228,7 +86,7 @@ export const getOfferById = (req: Request, res: Response): void => {
       return;
     }
 
-    const offer = mockOffers.find(o => o.id === id);
+    const offer = await dbService.getOfferById(id);
     
     if (!offer) {
       const response: ApiResponse = {
@@ -249,6 +107,7 @@ export const getOfferById = (req: Request, res: Response): void => {
     
     res.json(response);
   } catch (error) {
+    console.error('Error fetching offer:', error);
     const response: ApiResponse = {
       success: false,
       error: {
@@ -260,7 +119,7 @@ export const getOfferById = (req: Request, res: Response): void => {
   }
 };
 
-export const getAuthorById = (req: Request, res: Response): void => {
+export const getAuthorById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -276,7 +135,7 @@ export const getAuthorById = (req: Request, res: Response): void => {
       return;
     }
 
-    const author = mockAuthors[id];
+    const author = await dbService.getEmployerById(id);
     
     if (!author) {
       const response: ApiResponse = {
@@ -297,6 +156,7 @@ export const getAuthorById = (req: Request, res: Response): void => {
     
     res.json(response);
   } catch (error) {
+    console.error('Error fetching author:', error);
     const response: ApiResponse = {
       success: false,
       error: {
@@ -308,16 +168,9 @@ export const getAuthorById = (req: Request, res: Response): void => {
   }
 };
 
-export const getPromoOffers = (req: Request, res: Response): void => {
+export const getPromoOffers = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Фильтруем только промо-предложения и активные по датам
-    const now = new Date();
-    const promoOffers = mockOffers.filter(offer => 
-      offer.isPromo && 
-      offer.isActive && 
-      offer.startDate <= now && 
-      offer.endDate >= now
-    );
+    const promoOffers = await dbService.getPromoOffers();
     
     const response: ApiResponse<Offer[]> = {
       success: true,
@@ -326,6 +179,7 @@ export const getPromoOffers = (req: Request, res: Response): void => {
     
     res.json(response);
   } catch (error) {
+    console.error('Error fetching promo offers:', error);
     const response: ApiResponse = {
       success: false,
       error: {
@@ -337,7 +191,7 @@ export const getPromoOffers = (req: Request, res: Response): void => {
   }
 };
 
-export const getImageById = (req: Request, res: Response): void => {
+export const getImageById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -353,7 +207,7 @@ export const getImageById = (req: Request, res: Response): void => {
       return;
     }
 
-    const image = mockImages[id];
+    const image = await dbService.getImageById(id);
     
     if (!image) {
       const response: ApiResponse = {
@@ -374,6 +228,7 @@ export const getImageById = (req: Request, res: Response): void => {
     
     res.json(response);
   } catch (error) {
+    console.error('Error fetching image:', error);
     const response: ApiResponse = {
       success: false,
       error: {
