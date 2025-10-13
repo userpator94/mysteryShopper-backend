@@ -102,3 +102,46 @@ export interface Author {
   createdAt: Date;
   updatedAt: Date;
 }
+
+// Favorites API types
+export interface FavoriteOffer {
+  id: string;
+  available: boolean;
+  title: string;
+  description: string;
+  price: string;
+  location: string;
+  image_alt_text?: string;
+  is_promo: boolean;
+  start_date: string;
+  end_date: string;
+  employer_company: string;
+}
+
+export interface ApiErrorResponse {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+  };
+}
+
+export interface AddFavoriteRequest {
+  offer_id: string;
+}
+
+export interface AddFavoriteResponse {
+  success: true;
+  data: {
+    offer_id: string;
+    message: string;
+  };
+}
+
+export interface RemoveFavoriteResponse {
+  success: true;
+  data: {
+    offer_id: string;
+    message: string;
+  };
+}
