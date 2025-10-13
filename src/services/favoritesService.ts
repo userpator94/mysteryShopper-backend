@@ -22,35 +22,56 @@ export class FavoritesService {
 
   // Получить избранные предложения пользователя
   async getUserFavorites(userId: string): Promise<FavoriteOffer[]> {
-    const query = `
-      SELECT 
-        o.id,
-        CASE 
-          WHEN (o.max_participants - o.current_participants) > 0 
-          THEN true 
-          ELSE false 
-        END as available,
-        o.title,
-        o.description,
-        o.price,
-        o.location,
-        i.alt_text as image_alt_text,
-        o.is_promo,
-        o.start_date::text,
-        o.end_date::text,
-        e.company as employer_company
-      FROM favourites f
-      JOIN offers o ON f.offer_id = o.id
-      JOIN employers e ON o.employer_id = e.id
-      LEFT JOIN images i ON o.image_id = i.id
-      WHERE f.user_id = $1
-        AND o.is_active = TRUE
-        AND e.is_active = TRUE
-      ORDER BY f.created_at DESC
-    `;
-    
-    const result = await this.query(query, [userId]);
-    return result.rows;
+    try {
+      // Сначала проверим, существует ли таблица favorites
+      const tableCheckQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'favorites'
+        );
+      `;
+      
+      const tableExists = await this.query(tableCheckQuery);
+      
+      if (!tableExists.rows[0].exists) {
+        // Если таблицы нет, возвращаем пустой массив
+        return [];
+      }
+      
+      const query = `
+        SELECT 
+          o.id,
+          CASE 
+            WHEN (o.max_participants - o.current_participants) > 0 
+            THEN true 
+            ELSE false 
+          END as available,
+          o.title,
+          o.description,
+          o.price,
+          o.location,
+          i.alt_text as image_alt_text,
+          o.is_promo,
+          o.start_date::text,
+          o.end_date::text,
+          e.company as employer_company
+        FROM favorites f
+        JOIN offers o ON f.offer_id = o.id
+        JOIN employers e ON o.employer_id = e.id
+        LEFT JOIN images i ON o.image_id = i.id
+        WHERE f.user_id = $1
+          AND o.is_active = TRUE
+          AND e.is_active = TRUE
+        ORDER BY f.created_at DESC
+      `;
+      
+      const result = await this.query(query, [userId]);
+      return result.rows;
+    } catch (error) {
+      console.error('Error in getUserFavorites:', error);
+      throw error;
+    }
   }
 
   // Добавить предложение в избранное
@@ -63,7 +84,7 @@ export class FavoritesService {
 
     // Проверим, есть ли уже в избранном
     const checkQuery = `
-      SELECT id FROM favourites 
+      SELECT id FROM favorites 
       WHERE user_id = $1 AND offer_id = $2
     `;
     const checkResult = await this.query(checkQuery, [userId, offerId]);
@@ -74,7 +95,7 @@ export class FavoritesService {
 
     // Добавляем в избранное
     const insertQuery = `
-      INSERT INTO favourites (user_id, offer_id, created_at)
+      INSERT INTO favorites (user_id, offer_id, created_at)
       VALUES ($1, $2, NOW())
     `;
     await this.query(insertQuery, [userId, offerId]);
@@ -85,7 +106,7 @@ export class FavoritesService {
   // Удалить предложение из избранного
   async removeFromFavorites(userId: string, offerId: string): Promise<{ removed: boolean; message: string }> {
     const query = `
-      DELETE FROM favourites 
+      DELETE FROM favorites 
       WHERE user_id = $1 AND offer_id = $2
     `;
     

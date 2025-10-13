@@ -8,6 +8,19 @@ export const getFavorites = async (req: AuthenticatedRequest, res: Response): Pr
     const userId = req.userId!;
     const favorites = await favoritesService.getUserFavorites(userId);
     
+    // Проверяем, есть ли записи в избранном
+    if (favorites.length === 0) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FAVORITES_NOT_FOUND',
+          message: 'У пользователя нет избранных предложений'
+        }
+      };
+      res.status(404).json(response);
+      return;
+    }
+    
     const response: ApiResponse<FavoriteOffer[]> = {
       success: true,
       data: favorites
