@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Request, Response } from 'express';
 import homepageRoutes from './homepage';
 import favoritesRoutes from './favorites';
+import userStatisticsRoutes from './userStatistics';
 
 const router = Router();
 
@@ -26,6 +27,9 @@ router.get('/', (req: Request, res: Response) => {
           list: '/api/favorites',
           add: '/api/favorites',
           remove: '/api/favorites/:offerId'
+        },
+        userStatistics: {
+          get: '/api/user-statistics'
         }
       }
   });
@@ -45,6 +49,9 @@ router.use('/', homepageRoutes);
 
 // Favorites routes
 router.use('/favorites', favoritesRoutes);
+
+// User Statistics routes
+router.use('/user-statistics', userStatisticsRoutes);
 
 export default router;
 

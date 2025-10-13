@@ -195,6 +195,39 @@ export class DatabaseService {
     
     await this.query(query, [offerId]);
   }
+
+  // Проверить существование пользователя
+  async isUserExists(userId: string): Promise<boolean> {
+    const query = `
+      SELECT id FROM users 
+      WHERE id = $1 AND is_active = TRUE
+    `;
+    
+    const result = await this.query(query, [userId]);
+    return result.rows.length > 0;
+  }
+
+  // Получить статистику пользователя
+  async getUserStatistics(userId: string): Promise<any | null> {
+    const query = `
+      SELECT 
+        user_id,
+        name,
+        surname,
+        total_applications,
+        approved_applications,
+        in_progress_applications,
+        completed_applications,
+        total_earnings,
+        average_rating,
+        favourite_offers_count
+      FROM user_statistics 
+      WHERE user_id = $1
+    `;
+    
+    const result = await this.query(query, [userId]);
+    return result.rows[0] || null;
+  }
 }
 
 export const dbService = new DatabaseService();
