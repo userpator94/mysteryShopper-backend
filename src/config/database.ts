@@ -22,14 +22,33 @@ pool.on('error', (err) => {
 
 // Функция для тестирования подключения
 export const testConnection = async (): Promise<boolean> => {
+  console.log('🔍 Testing database connection...');
+  console.log(`📊 Database config: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
+  
   try {
     const client = await pool.connect();
-    const result = await client.query('SELECT NOW()');
-    console.log('✅ Database connected successfully:', result.rows[0]);
+    const result = await client.query('SELECT NOW() as current_time, version() as postgres_version');
+    console.log('✅ Database connected successfully!');
+    console.log(`⏰ Current time: ${result.rows[0].current_time}`);
+    console.log(`🐘 PostgreSQL version: ${result.rows[0].postgres_version}`);
     client.release();
     return true;
-  } catch (err) {
-    console.error('❌ Database connection failed:', err);
+  } catch (err: any) {
+    console.error('❌ Database connection failed:');
+    console.error(`   Error code: ${err.code || 'UNKNOWN'}`);
+    console.error(`   Error message: ${err.message}`);
+    console.error(`   Connection details: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
+    
+    if (err.code === 'ECONNREFUSED') {
+      console.error('💡 Suggestion: Make sure PostgreSQL is running and accessible');
+    } else if (err.code === 'ENOTFOUND') {
+      console.error('💡 Suggestion: Check if the database host is correct');
+    } else if (err.code === '28P01') {
+      console.error('💡 Suggestion: Check username and password');
+    } else if (err.code === '3D000') {
+      console.error('💡 Suggestion: Check if the database exists');
+    }
+    
     return false;
   }
 };

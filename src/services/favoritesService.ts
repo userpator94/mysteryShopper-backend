@@ -23,12 +23,12 @@ export class FavoritesService {
   // Получить избранные предложения пользователя
   async getUserFavorites(userId: string): Promise<FavoriteOffer[]> {
     try {
-      // Сначала проверим, существует ли таблица favorites
+      // Сначала проверим, существует ли таблица favourites
       const tableCheckQuery = `
         SELECT EXISTS (
           SELECT FROM information_schema.tables 
           WHERE table_schema = 'public' 
-          AND table_name = 'favorites'
+          AND table_name = 'favourites'
         );
       `;
       
@@ -56,7 +56,7 @@ export class FavoritesService {
           o.start_date::text,
           o.end_date::text,
           e.company as employer_company
-        FROM favorites f
+        FROM favourites f
         JOIN offers o ON f.offer_id = o.id
         JOIN employers e ON o.employer_id = e.id
         LEFT JOIN images i ON o.image_id = i.id
@@ -76,37 +76,60 @@ export class FavoritesService {
 
   // Добавить предложение в избранное
   async addToFavorites(userId: string, offerId: string): Promise<{ added: boolean; message: string }> {
-    // Сначала проверим, существует ли предложение
-    const offerExists = await this.isOfferExists(offerId);
-    if (!offerExists) {
-      throw new Error('OFFER_NOT_FOUND');
-    }
+    try {
+      // Сначала проверим, существует ли таблица favourites
+      const tableCheckQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'favourites'
+        );
+      `;
+      
+      const tableExists = await this.query(tableCheckQuery);
+      
+      if (!tableExists.rows[0].exists) {
+        console.error('❌ Table "favourites" does not exist');
+        throw new Error('TABLE_NOT_FOUND');
+      }
 
-    // Проверим, есть ли уже в избранном
-    const checkQuery = `
-      SELECT id FROM favorites 
-      WHERE user_id = $1 AND offer_id = $2
-    `;
-    const checkResult = await this.query(checkQuery, [userId, offerId]);
-    
-    if (checkResult.rows.length > 0) {
-      return { added: false, message: 'Уже в избранном' };
-    }
+      // Проверим, существует ли предложение
+      const offerExists = await this.isOfferExists(offerId);
+      
+      if (!offerExists) {
+        console.error(`❌ Offer ${offerId} not found`);
+        throw new Error('OFFER_NOT_FOUND');
+      }
 
-    // Добавляем в избранное
-    const insertQuery = `
-      INSERT INTO favorites (user_id, offer_id, created_at)
-      VALUES ($1, $2, NOW())
-    `;
-    await this.query(insertQuery, [userId, offerId]);
-    
-    return { added: true, message: 'Добавлено в избранное' };
+      // Проверим, есть ли уже в избранном
+      const checkQuery = `
+        SELECT id FROM favourites 
+        WHERE user_id = $1 AND offer_id = $2
+      `;
+      const checkResult = await this.query(checkQuery, [userId, offerId]);
+      
+      if (checkResult.rows.length > 0) {
+        return { added: false, message: 'Уже в избранном' };
+      }
+
+      // Добавляем в избранное
+      const insertQuery = `
+        INSERT INTO favourites (user_id, offer_id, created_at)
+        VALUES ($1, $2, NOW())
+      `;
+      await this.query(insertQuery, [userId, offerId]);
+      
+      return { added: true, message: 'Добавлено в избранное' };
+    } catch (error: any) {
+      console.error(`❌ Error in addToFavorites:`, error);
+      throw error;
+    }
   }
 
   // Удалить предложение из избранного
   async removeFromFavorites(userId: string, offerId: string): Promise<{ removed: boolean; message: string }> {
     const query = `
-      DELETE FROM favorites 
+      DELETE FROM favourites 
       WHERE user_id = $1 AND offer_id = $2
     `;
     
@@ -128,6 +151,37 @@ export class FavoritesService {
     
     const result = await this.query(query, [offerId]);
     return result.rows.length > 0;
+  }
+
+  // Проверить, находится ли предложение в избранном у пользователя
+  async isOfferInFavorites(userId: string, offerId: string): Promise<boolean> {
+    try {
+      // Сначала проверим, существует ли таблица favourites
+      const tableCheckQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'favourites'
+        );
+      `;
+      
+      const tableExists = await this.query(tableCheckQuery);
+      
+      if (!tableExists.rows[0].exists) {
+        return false;
+      }
+
+      const query = `
+        SELECT id FROM favourites 
+        WHERE user_id = $1 AND offer_id = $2
+      `;
+      
+      const result = await this.query(query, [userId, offerId]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error('Error checking if offer is in favorites:', error);
+      return false;
+    }
   }
 }
 

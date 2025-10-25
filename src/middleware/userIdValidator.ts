@@ -43,8 +43,9 @@ export const validateUserId = async (
     
     req.userId = userId;
     next();
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error validating user:', error);
+    
     const response: ApiErrorResponse = {
       success: false,
       error: {

@@ -56,22 +56,41 @@ app.use(errorHandler);
 
 // Start server
 const startServer = async () => {
+  console.log('🚀 Starting Mystery Shopper Backend Server...');
+  console.log(`📅 Started at: ${new Date().toISOString()}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  
   try {
+    console.log('🔍 Step 1: Testing database connection...');
     // Test database connection
     const dbConnected = await testConnection();
     if (!dbConnected) {
-      console.error('❌ Failed to connect to database. Server will not start.');
+      console.error('❌ CRITICAL: Failed to connect to database. Server will not start.');
+      console.error('💡 Please check:');
+      console.error('   1. PostgreSQL is running');
+      console.error('   2. Database credentials are correct');
+      console.error('   3. Database exists');
+      console.error('   4. Network connectivity');
       process.exit(1);
     }
+    
+    console.log('✅ Step 1 completed: Database connection successful');
+    console.log('🔍 Step 2: Starting Express server...');
 
     app.listen(PORT, () => {
+      console.log('🎉 SERVER STARTED SUCCESSFULLY!');
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🗄️ Database: ${process.env.DB_NAME || 'msDB'} on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
+      console.log(`🔒 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3000'}`);
+      console.log('📝 Ready to handle requests!');
     });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
+  } catch (error: any) {
+    console.error('❌ CRITICAL ERROR during server startup:');
+    console.error(`   Error: ${error.message}`);
+    console.error(`   Stack: ${error.stack}`);
+    console.error('💡 Server failed to start. Please check the logs above.');
     process.exit(1);
   }
 };
