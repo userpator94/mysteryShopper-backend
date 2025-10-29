@@ -7,7 +7,7 @@ const router = Router();
 // Применяем middleware для валидации X-User-Id ко всем маршрутам
 router.use(validateUserId);
 
-// GET /api/user-statistics - получить статистику пользователя
-router.get('/', getUserStatistics);
+// POST /api/user/stats - получить статистику пользователя (POST для защиты личных данных)
+router.post('/', getUserStatistics);
 
 export default router;
