@@ -211,18 +211,21 @@ export class DatabaseService {
   async getUserStatistics(userId: string): Promise<any | null> {
     const query = `
       SELECT 
-        user_id,
-        name,
-        surname,
-        total_applications,
-        approved_applications,
-        in_progress_applications,
-        completed_applications,
-        total_earnings,
-        average_rating,
-        favourite_offers_count
-      FROM user_statistics 
-      WHERE user_id = $1
+        us.user_id,
+        us.name,
+        us.surname,
+        u.email,
+        u.phone,
+        us.total_applications,
+        us.approved_applications,
+        us.in_progress_applications,
+        us.completed_applications,
+        us.total_earnings,
+        us.average_rating,
+        us.favourite_offers_count
+      FROM user_statistics us
+      JOIN users u ON us.user_id = u.id
+      WHERE us.user_id = $1
     `;
     
     const result = await this.query(query, [userId]);

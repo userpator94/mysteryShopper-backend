@@ -29,7 +29,7 @@ router.get('/', (req: Request, res: Response) => {
           remove: '/api/favorites/:offerId'
         },
         userStatistics: {
-          get: '/api/user-statistics'
+          post: '/api/user/stats'
         }
       }
   });
@@ -51,7 +51,7 @@ router.use('/', homepageRoutes);
 router.use('/favorites', favoritesRoutes);
 
 // User Statistics routes
-router.use('/user-statistics', userStatisticsRoutes);
+router.use('/user/stats', userStatisticsRoutes);
 
 export default router;
 
