@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { login, signup } from '../controllers/authController';
+import { login, signup, logout } from '../controllers/authController';
+import { authenticateJWT } from '../middleware/authMiddleware';
 import { loginValidation, signupValidation } from '../utils/validators';
 import { handleValidationErrors } from '../middleware/validationHandler';
 
@@ -19,6 +20,13 @@ router.post(
   signupValidation,
   handleValidationErrors,
   signup
+);
+
+// POST /api/logout
+router.post(
+  '/logout',
+  authenticateJWT,
+  logout
 );
 
 export default router;

@@ -173,6 +173,13 @@ export interface SignupResponse {
   };
 }
 
+export interface LogoutResponse {
+  success: true;
+  data: {
+    message: string;
+  };
+}
+
 export interface AddFavoriteRequest {
   offer_id: string;
 }

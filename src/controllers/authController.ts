@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { LoginRequest, SignupRequest, LoginResponse, SignupResponse, ApiErrorResponse, AuthUser } from '../types';
+import { LoginRequest, SignupRequest, LoginResponse, SignupResponse, LogoutResponse, ApiErrorResponse, AuthUser } from '../types';
+import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { dbService } from '../services/databaseService';
 import { authService } from '../services/authService';
 import { normalizePhone, formatPhone } from '../utils/validators';
@@ -202,6 +203,38 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: process.env.NODE_ENV === 'development' 
+          ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
+          : 'Внутренняя ошибка сервера'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+export const logout = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.userId!;
+    const userEmail = req.userEmail;
+
+    // Логируем выход пользователя
+    console.log(`🚪 User logged out: ${userEmail || 'unknown'} (ID: ${userId})`);
+
+    const response: LogoutResponse = {
+      success: true,
+      data: {
+        message: 'Выход выполнен успешно'
+      }
+    };
+
+    res.status(200).json(response);
+  } catch (error: any) {
+    console.error('Error in logout:', error);
+    
     const response: ApiErrorResponse = {
       success: false,
       error: {
