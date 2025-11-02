@@ -231,6 +231,79 @@ export class DatabaseService {
     const result = await this.query(query, [userId]);
     return result.rows[0] || null;
   }
+
+  // Получить пользователя по email (включая password_hash для проверки)
+  async getUserByEmail(email: string): Promise<any | null> {
+    const query = `
+      SELECT 
+        id,
+        email,
+        password_hash,
+        phone,
+        name,
+        surname,
+        is_active
+      FROM users
+      WHERE email = $1
+    `;
+    
+    const result = await this.query(query, [email]);
+    return result.rows[0] || null;
+  }
+
+  // Проверить существование email
+  async isEmailExists(email: string): Promise<boolean> {
+    const query = `
+      SELECT id FROM users 
+      WHERE email = $1
+    `;
+    
+    const result = await this.query(query, [email]);
+    return result.rows.length > 0;
+  }
+
+  // Проверить существование телефона
+  async isPhoneExists(phone: string): Promise<boolean> {
+    const query = `
+      SELECT id FROM users 
+      WHERE phone = $1
+    `;
+    
+    const result = await this.query(query, [phone]);
+    return result.rows.length > 0;
+  }
+
+  // Создать нового пользователя
+  async createUser(userData: {
+    email: string;
+    password: string; // Это уже хешированный пароль
+    phone: string;
+    name: string;
+    lastname: string;
+  }): Promise<any> {
+    const query = `
+      INSERT INTO users (email, password_hash, phone, name, surname, is_active, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, TRUE, NOW(), NOW())
+      RETURNING id, email, phone, name, surname, created_at
+    `;
+    
+    const result = await this.query(query, [
+      userData.email,
+      userData.password,
+      userData.phone,
+      userData.name,
+      userData.lastname
+    ]);
+
+    return {
+      id: result.rows[0].id,
+      email: result.rows[0].email,
+      phone: result.rows[0].phone,
+      name: result.rows[0].name,
+      lastname: result.rows[0].surname,
+      createdAt: result.rows[0].created_at
+    };
+  }
 }
 
 export const dbService = new DatabaseService();

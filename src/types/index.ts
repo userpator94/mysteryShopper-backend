@@ -123,6 +123,53 @@ export interface ApiErrorResponse {
   error: {
     code: string;
     message: string;
+    field?: string;
+    errors?: Array<{
+      field: string;
+      message: string;
+    }>;
+  };
+}
+
+// Authentication types
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  name: string;
+  lastname: string;
+  email: string;
+  phone: string;
+  password: string;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  lastname: string;
+  phone: string;
+}
+
+export interface LoginResponse {
+  success: true;
+  data: {
+    token: string;
+    user: AuthUser;
+    expiresIn: number;
+  };
+}
+
+export interface SignupResponse {
+  success: true;
+  data: {
+    token: string;
+    user: AuthUser & {
+      createdAt: string;
+    };
+    expiresIn: number;
   };
 }
 
