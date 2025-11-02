@@ -192,3 +192,20 @@ export interface RemoveFavoriteResponse {
     message: string;
   };
 }
+
+// Apply API types
+export interface ApplyRequest {
+  offer_id: string;
+}
+
+export interface ApplyResponse {
+  success: true;
+  data: {
+    application_id: string;
+    offer_id: string;
+    user_id: string;
+    applied_at: string;
+    approved_at?: string;
+    approved_by?: string;
+  };
+}

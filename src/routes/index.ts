@@ -4,6 +4,7 @@ import homepageRoutes from './homepage';
 import favoritesRoutes from './favorites';
 import userStatisticsRoutes from './userStatistics';
 import authRoutes from './auth';
+import applyRoutes from './apply';
 
 const router = Router();
 
@@ -60,6 +61,9 @@ router.use('/user/stats', userStatisticsRoutes);
 
 // Authentication routes
 router.use('/', authRoutes);
+
+// Apply routes
+router.use('/apply', applyRoutes);
 
 export default router;
 

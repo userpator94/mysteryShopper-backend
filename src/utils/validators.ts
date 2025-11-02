@@ -108,3 +108,15 @@ export const signupValidation: ValidationChain[] = [
     .withMessage('Пароль может содержать только латинские буквы, цифры и символы !@#$%^&*()-_=+')
 ];
 
+// UUID validation regex
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const applyValidation: ValidationChain[] = [
+  body('offer_id')
+    .trim()
+    .notEmpty()
+    .withMessage('offer_id обязателен')
+    .matches(uuidRegex)
+    .withMessage('Неверный формат offer_id. Ожидается UUID')
+];
+
