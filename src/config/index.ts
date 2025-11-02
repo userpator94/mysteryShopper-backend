@@ -12,10 +12,10 @@ export const config = {
     password: process.env.DB_PASSWORD || 'password'
   },
   
-  // JWT configuration (for future use)
+  // JWT configuration
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key',
-    expiresIn: process.env.JWT_EXPIRES_IN || '24h'
+    expiresIn: process.env.JWT_EXPIRES_IN || '1h' // 3600 seconds = 1 hour (as per API documentation)
   },
   
   // Rate limiting

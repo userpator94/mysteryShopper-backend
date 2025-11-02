@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import homepageRoutes from './homepage';
 import favoritesRoutes from './favorites';
 import userStatisticsRoutes from './userStatistics';
+import authRoutes from './auth';
 
 const router = Router();
 
@@ -15,6 +16,10 @@ router.get('/', (req: Request, res: Response) => {
       endpoints: {
         health: '/health',
         api: '/api',
+        auth: {
+          login: 'POST /api/login',
+          signup: 'POST /api/signup'
+        },
         offers: {
           list: '/api/offers',
           byId: '/api/offers/:id',
@@ -52,6 +57,9 @@ router.use('/favorites', favoritesRoutes);
 
 // User Statistics routes
 router.use('/user/stats', userStatisticsRoutes);
+
+// Authentication routes
+router.use('/', authRoutes);
 
 export default router;
 
