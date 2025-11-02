@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { getFavorites, addFavorite, removeFavorite } from '../controllers/favoritesController';
-import { validateUserId } from '../middleware/userIdValidator';
+import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Применяем middleware для валидации X-User-Id ко всем маршрутам
-router.use(validateUserId);
+// Применяем middleware для проверки JWT токена ко всем маршрутам
+router.use(authenticateJWT);
 
 // GET /api/favorites - получить список избранных предложений
 router.get('/', getFavorites);

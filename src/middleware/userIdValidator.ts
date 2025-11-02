@@ -4,6 +4,7 @@ import { dbService } from '../services/databaseService';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  userEmail?: string;
 }
 
 export const validateUserId = async (

@@ -18,7 +18,7 @@ export class AuthService {
   // Генерация JWT токена
   generateToken(user: AuthUser): string {
     const payload = {
-      id: user.id,
+      user_id: user.id, // Используем user_id согласно документации
       email: user.email
     };
 
@@ -65,11 +65,19 @@ export class AuthService {
     return 3600; // По умолчанию 1 час
   }
 
-  // Верификация токена (для будущего использования)
+  // Верификация токена
   verifyToken(token: string): any {
     try {
       return jwt.verify(token, config.jwt.secret);
-    } catch (error) {
+    } catch (error: any) {
+      // Более информативные ошибки
+      if (error.name === 'TokenExpiredError') {
+        throw new Error('jwt expired');
+      } else if (error.name === 'JsonWebTokenError') {
+        throw new Error('Invalid token');
+      } else if (error.name === 'NotBeforeError') {
+        throw new Error('Token not active');
+      }
       throw new Error('Invalid token');
     }
   }
