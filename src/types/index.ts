@@ -213,6 +213,20 @@ export interface ApplyResponse {
     user_id: string;
     applied_at: string;
     approved_at?: string;
-    approved_by?: string;
+    status?: string;
   };
+}
+
+export interface Application {
+  application_id: string;
+  offer_id: string;
+  user_id: string;
+  applied_at: string;
+  approved_at?: string;
+  status?: string;
+}
+
+export interface GetAppliesResponse {
+  success: true;
+  data: Application | Application[];
 }

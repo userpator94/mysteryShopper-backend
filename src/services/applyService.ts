@@ -53,7 +53,7 @@ export class ApplyService {
         user_id,
         applied_at,
         approved_at,
-        approved_by
+        status
     `;
     
     const result = await this.query(query, [offerId, userId]);
@@ -68,7 +68,98 @@ export class ApplyService {
       user_id: result.rows[0].user_id,
       applied_at: result.rows[0].applied_at,
       approved_at: result.rows[0].approved_at || undefined,
-      approved_by: result.rows[0].approved_by || undefined
+      status: result.rows[0].status || undefined
+    };
+  }
+
+  // Получить все заявки пользователя
+  async getUserApplications(userId: string): Promise<any[]> {
+    const query = `
+      SELECT 
+        id as application_id,
+        offer_id,
+        user_id,
+        applied_at,
+        approved_at,
+        status
+      FROM offer_applications
+      WHERE user_id = $1
+      ORDER BY applied_at DESC
+    `;
+    
+    const result = await this.query(query, [userId]);
+    return result.rows.map((row: any) => ({
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      applied_at: row.applied_at,
+      approved_at: row.approved_at || undefined,
+      status: row.status || undefined
+    }));
+  }
+
+  // Получить заявку пользователя по offer_id
+  async getUserApplicationByOfferId(userId: string, offerId: string): Promise<any | null> {
+    const query = `
+      SELECT 
+        id as application_id,
+        offer_id,
+        user_id,
+        applied_at,
+        approved_at,
+        status
+      FROM offer_applications
+      WHERE user_id = $1 AND offer_id = $2
+      ORDER BY applied_at DESC
+      LIMIT 1
+    `;
+    
+    const result = await this.query(query, [userId, offerId]);
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      applied_at: row.applied_at,
+      approved_at: row.approved_at || undefined,
+      status: row.status || undefined
+    };
+  }
+
+  // Отменить заявку (изменить статус на cancelled)
+  async cancelApplication(userId: string, offerId: string): Promise<any | null> {
+    const query = `
+      UPDATE offer_applications
+      SET status = 'cancelled'
+      WHERE user_id = $1 AND offer_id = $2
+      RETURNING 
+        id as application_id,
+        offer_id,
+        user_id,
+        applied_at,
+        approved_at,
+        status
+    `;
+    
+    const result = await this.query(query, [userId, offerId]);
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      applied_at: row.applied_at,
+      approved_at: row.approved_at || undefined,
+      status: row.status || undefined
     };
   }
 }

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { applyToOffer } from '../controllers/applyController';
+import { applyToOffer, cancelApplication } from '../controllers/applyController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 import { applyValidation } from '../utils/validators';
 import { handleValidationErrors } from '../middleware/validationHandler';
@@ -16,6 +16,9 @@ router.post(
   handleValidationErrors,
   applyToOffer
 );
+
+// PUT /api/apply?offer_id=xxx - отменить заявку (изменить статус на cancelled)
+router.put('/', cancelApplication);
 
 export default router;
 

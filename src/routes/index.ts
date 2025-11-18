@@ -5,6 +5,7 @@ import favoritesRoutes from './favorites';
 import userStatisticsRoutes from './userStatistics';
 import authRoutes from './auth';
 import applyRoutes from './apply';
+import appliesRoutes from './applies';
 
 const router = Router();
 
@@ -64,6 +65,9 @@ router.use('/', authRoutes);
 
 // Apply routes
 router.use('/apply', applyRoutes);
+
+// Applies routes (GET /api/applies)
+router.use('/applies', appliesRoutes);
 
 export default router;
 
