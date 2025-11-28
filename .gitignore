@@ -123,3 +123,6 @@ build/
 # Test coverage
 coverage/
 
+# Uploaded files
+uploads/
+

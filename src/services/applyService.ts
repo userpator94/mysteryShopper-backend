@@ -109,7 +109,7 @@ export class ApplyService {
         approved_at,
         status
       FROM offer_applications
-      WHERE user_id = $1 AND offer_id = $2
+      WHERE user_id = $1 AND offer_id = $2 AND (status IS NULL OR status != 'cancelled')
       ORDER BY applied_at DESC
       LIMIT 1
     `;

@@ -230,3 +230,32 @@ export interface GetAppliesResponse {
   success: true;
   data: Application | Application[];
 }
+
+// Report API types
+export interface ReportRequest {
+  application_id: string;
+  offer_id: string;
+  user_id: string;
+  rating: number;
+  feedback: Record<string, any>; // Accepts different JSON structures
+}
+
+// PhotoInfo больше не используется, так как photos теперь массив ID
+// Но оставляем для обратной совместимости
+export interface PhotoInfo {
+  id: string; // ID изображения из таблицы images
+}
+
+export interface ReportResponse {
+  success: true;
+  data: {
+    report_id: string;
+    application_id: string;
+    offer_id: string;
+    user_id: string;
+    rating: number;
+    feedback: Record<string, any>;
+    photos: string[]; // Массив ID изображений из таблицы images
+    created_at: string;
+  };
+}

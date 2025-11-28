@@ -20,6 +20,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@types/multer": "^2.0.0",
     "@types/pg": "^8.15.5",
     "bcrypt": "^6.0.0",
     "compression": "^1.7.4",
@@ -30,6 +31,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "multer": "^2.0.2",
     "pg": "^8.16.3"
   },
   "devDependencies": {

@@ -120,3 +120,42 @@ export const applyValidation: ValidationChain[] = [
     .withMessage('Неверный формат offer_id. Ожидается UUID')
 ];
 
+export const reportValidation: ValidationChain[] = [
+  body('application_id')
+    .trim()
+    .notEmpty()
+    .withMessage('application_id обязателен')
+    .matches(uuidRegex)
+    .withMessage('Неверный формат application_id. Ожидается UUID'),
+  
+  body('offer_id')
+    .trim()
+    .notEmpty()
+    .withMessage('offer_id обязателен')
+    .matches(uuidRegex)
+    .withMessage('Неверный формат offer_id. Ожидается UUID'),
+  
+  body('user_id')
+    .trim()
+    .notEmpty()
+    .withMessage('user_id обязателен')
+    .matches(uuidRegex)
+    .withMessage('Неверный формат user_id. Ожидается UUID'),
+  
+  body('rating')
+    .notEmpty()
+    .withMessage('rating обязателен')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('rating должен быть числом от 1 до 5'),
+  
+  body('feedback')
+    .notEmpty()
+    .withMessage('feedback обязателен')
+    .custom((value) => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new Error('feedback должен быть объектом JSON');
+      }
+      return true;
+    })
+];
+

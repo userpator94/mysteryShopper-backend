@@ -6,6 +6,7 @@ import userStatisticsRoutes from './userStatistics';
 import authRoutes from './auth';
 import applyRoutes from './apply';
 import appliesRoutes from './applies';
+import reportRoutes from './report';
 
 const router = Router();
 
@@ -68,6 +69,9 @@ router.use('/apply', applyRoutes);
 
 // Applies routes (GET /api/applies)
 router.use('/applies', appliesRoutes);
+
+// Report routes
+router.use('/report', reportRoutes);
 
 export default router;
 
