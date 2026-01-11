@@ -16,7 +16,8 @@ import { testConnection } from './config/database';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0');
 
 // Security middleware
 app.use(helmet());
@@ -81,10 +82,10 @@ const startServer = async () => {
     console.log('✅ Step 1 completed: Database connection successful');
     console.log('🔍 Step 2: Starting Express server...');
 
-    app.listen(PORT, () => {
+    app.listen(PORT, HOST, () => {
       console.log('🎉 SERVER STARTED SUCCESSFULLY!');
-      console.log(`🚀 Server is running on port ${PORT}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      console.log(`🚀 Server is running on ${HOST}:${PORT}`);
+      console.log(`📊 Health check: http://${HOST}:${PORT}/health`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🗄️ Database: ${process.env.DB_NAME || 'msDB'} on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
       console.log(`🔒 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3000'}`);
