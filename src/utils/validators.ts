@@ -158,4 +158,3 @@ export const reportValidation: ValidationChain[] = [
       return true;
     })
 ];
-

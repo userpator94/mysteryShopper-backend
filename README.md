@@ -1,28 +1,28 @@
 # Mystery Shopper Backend
 
-Backend API для приложения Mystery Shopper, построенный на TypeScript и Express.js.
+Backend API for the Mystery Shopper application, built with TypeScript and Express.js.
 
-## 🚀 Быстрый старт
+## Quick Start
 
-### Предварительные требования
+### Prerequisites
 
-- Node.js (версия 16 или выше)
-- npm или yarn
+- Node.js (version 16 or higher)
+- npm or yarn
 
-### Установка
+### Installation
 
-1. Клонируйте репозиторий:
+1. Clone the repository:
 ```bash
 git clone <repository-url>
 cd mysteryShopperBE
 ```
 
-2. Установите зависимости:
+2. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Создайте файл `.env` с переменными окружения:
+3. Create a `.env` file with environment variables:
 ```bash
 # Server Configuration
 PORT=3000
@@ -39,72 +39,72 @@ DB_PASSWORD=password
 CORS_ORIGIN=http://localhost:3000
 ```
 
-4. Настройте PostgreSQL базу данных:
+4. Set up the PostgreSQL database:
 ```bash
-# Создайте базу данных
+# Create the database
 createdb msDB
 
-# Выполните SQL скрипт для создания таблиц
+# Run the SQL script to create tables
 psql -d msDB -f database_schema.sql
 
-# Заполните таблицы тестовыми данными
+# Populate tables with test data
 psql -d msDB -f seed_data.sql
 ```
 
-### Запуск
+### Running
 
-#### Режим разработки
+#### Development mode
 ```bash
 npm run dev
 ```
 
-#### Продакшн режим
+#### Production mode
 ```bash
 npm run build
 npm start
 ```
 
-## 📁 Структура проекта
+## Project Structure
 
 ```
 src/
-├── config/          # Конфигурационные файлы
-├── controllers/     # Контроллеры для обработки запросов
-├── middleware/      # Промежуточное ПО (middleware)
-├── routes/          # Маршруты API
-├── types/           # TypeScript типы
-├── utils/           # Утилиты и вспомогательные функции
-└── index.ts         # Точка входа приложения
+├── config/          # Configuration files
+├── controllers/     # Request handlers
+├── middleware/      # Middleware
+├── routes/          # API routes
+├── types/           # TypeScript types
+├── utils/           # Utilities and helpers
+└── index.ts         # Application entry point
 ```
 
-## 🛠 Доступные скрипты
+## Available Scripts
 
-- `npm run dev` - Запуск в режиме разработки с hot reload
-- `npm run build` - Сборка проекта
-- `npm start` - Запуск собранного проекта
-- `npm test` - Запуск тестов
-- `npm run lint` - Проверка кода линтером
-- `npm run lint:fix` - Автоматическое исправление ошибок линтера
+- `npm run dev` - Run in development mode with hot reload
+- `npm run build` - Build the project
+- `npm start` - Run the built project
+- `npm test` - Run tests
+- `npm run lint` - Lint the code
+- `npm run lint:fix` - Auto-fix lint errors
 
-## 🔧 Конфигурация
+## Configuration
 
-Основные настройки находятся в файле `.env`:
+Main settings are in the `.env` file:
 
-- `PORT` - Порт сервера (по умолчанию: 3000)
-- `NODE_ENV` - Окружение (development/production)
-- `CORS_ORIGIN` - Разрешенные источники для CORS
-- `JWT_SECRET` - Секретный ключ для JWT токенов
-- `DB_*` - Настройки базы данных
+- `PORT` - Server port (default: 3000)
+- `NODE_ENV` - Environment (development/production)
+- `CORS_ORIGIN` - Allowed origins for CORS
+- `JWT_SECRET` - Secret key for JWT tokens
+- `DB_*` - Database settings
 
-## 📡 API Endpoints
+## API Endpoints
 
-### Основные маршруты
+### Main routes
 
-- `GET /health` - Проверка состояния сервера
-- `GET /api` - Информация об API
-- `GET /api/protected` - Пример защищенного маршрута
+- `GET /health` - Server health check
+- `GET /api` - API information
+- `GET /api/protected` - Example protected route
 
-### Структура ответа
+### Response structure
 
 ```json
 {
@@ -117,41 +117,40 @@ src/
 }
 ```
 
-## 🔒 Безопасность
+## Security
 
-Проект включает следующие меры безопасности:
+The project includes the following security measures:
 
-- Helmet.js для установки заголовков безопасности
-- CORS для контроля доступа
-- Rate limiting для защиты от DDoS
-- Валидация входных данных
-- Санитизация данных
+- Helmet.js for security headers
+- CORS for access control
+- Rate limiting for DDoS protection
+- Input validation
+- Data sanitization
 
-## 🧪 Тестирование
+## Testing
 
 ```bash
 npm test
 ```
 
-## 📝 Логирование
+## Logging
 
-Приложение использует Morgan для логирования HTTP запросов и собственную систему логирования ошибок.
+The application uses Morgan for HTTP request logging and a custom error logging system.
 
-## 🚀 Развертывание
+## Deployment
 
-1. Установите зависимости: `npm install`
-2. Соберите проект: `npm run build`
-3. Запустите: `npm start`
+1. Install dependencies: `npm install`
+2. Build the project: `npm run build`
+3. Run: `npm start`
 
-## 🤝 Вклад в проект
+## Contributing
 
-1. Форкните репозиторий
-2. Создайте ветку для новой функции
-3. Внесите изменения
-4. Добавьте тесты
-5. Создайте Pull Request
+1. Fork the repository
+2. Create a branch for your feature
+3. Make your changes
+4. Add tests
+5. Create a Pull Request
 
-## 📄 Лицензия
+## License
 
 MIT License
-
