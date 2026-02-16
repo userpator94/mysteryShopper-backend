@@ -18,7 +18,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'user' | 'shopper';
+  role: 'user' | 'employer';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -137,20 +137,27 @@ export interface LoginRequest {
   password: string;
 }
 
+export type UserRole = 'user' | 'employer';
+
 export interface SignupRequest {
   name: string;
   lastname: string;
   email: string;
   phone: string;
   password: string;
+  role?: UserRole;
+  company?: string;
+  description?: string;
+  website?: string;
 }
 
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  lastname: string;
+  surname: string;
   phone: string;
+  role: UserRole;
 }
 
 export interface LoginResponse {
@@ -167,9 +174,24 @@ export interface SignupResponse {
   data: {
     token: string;
     user: AuthUser & {
-      createdAt: string;
+      createdAt?: string;
     };
     expiresIn: number;
+  };
+}
+
+export interface MeResponse {
+  success: true;
+  data: {
+    id: string;
+    name: string;
+    surname: string;
+    email: string;
+    phone: string;
+    role: UserRole;
+    company?: string;
+    description?: string;
+    website?: string;
   };
 }
 

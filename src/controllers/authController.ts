@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { LoginRequest, SignupRequest, LoginResponse, SignupResponse, LogoutResponse, ApiErrorResponse, AuthUser } from '../types';
+import { LoginRequest, SignupRequest, LoginResponse, SignupResponse, LogoutResponse, ApiErrorResponse, AuthUser, MeResponse } from '../types';
 import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { dbService } from '../services/databaseService';
 import { authService } from '../services/authService';
@@ -52,13 +52,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Формируем объект пользователя для ответа
+    const role = (user.role === 'employer' ? 'employer' : 'user') as AuthUser['role'];
     const authUser: AuthUser = {
       id: user.id,
       email: user.email,
       name: user.name || '',
-      lastname: user.surname || '',
-      phone: user.phone ? formatPhone(user.phone) : ''
+      surname: user.surname || '',
+      phone: user.phone ? formatPhone(user.phone) : '',
+      role
     };
 
     // Генерируем JWT токен
@@ -100,12 +101,23 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, lastname, email, phone, password }: SignupRequest = req.body;
+    const { name, lastname, email, phone, password, role: reqRole, company, description, website }: SignupRequest = req.body;
+    const role = reqRole === 'employer' ? 'employer' : 'user';
 
-    // Нормализуем телефон для хранения в базе
+    if (role === 'employer' && !(company && company.trim())) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Для регистрации как заказчик необходимо указать компанию (company)'
+        }
+      };
+      res.status(422).json(response);
+      return;
+    }
+
     const normalizedPhone = normalizePhone(phone);
 
-    // Проверяем существование email
     const emailExists = await dbService.isEmailExists(email);
     if (emailExists) {
       const response: ApiErrorResponse = {
@@ -119,7 +131,6 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Проверяем существование телефона
     const phoneExists = await dbService.isPhoneExists(normalizedPhone);
     if (phoneExists) {
       const response: ApiErrorResponse = {
@@ -133,33 +144,39 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Хешируем пароль
     const hashedPassword = await authService.hashPassword(password);
 
-    // Создаем пользователя
     const newUser = await dbService.createUser({
       email,
       password: hashedPassword,
       phone: normalizedPhone,
       name: name.trim(),
-      lastname: lastname.trim()
+      lastname: lastname.trim(),
+      role
     });
 
-    // Формируем объект пользователя для ответа (форматируем телефон)
+    if (role === 'employer') {
+      await dbService.createEmployer({
+        user_id: newUser.id,
+        company: company!.trim(),
+        description: description?.trim() || undefined,
+        website: website?.trim() || undefined
+      });
+    }
+
     const authUser: AuthUser = {
       id: newUser.id,
       email: newUser.email,
       name: newUser.name,
-      lastname: newUser.lastname,
-      phone: formatPhone(newUser.phone)
+      surname: newUser.lastname,
+      phone: formatPhone(newUser.phone),
+      role: newUser.role as AuthUser['role']
     };
 
-    // Генерируем JWT токен
     const token = authService.generateToken(authUser);
     const expiresIn = authService.getTokenExpiresIn();
 
-    // Логируем успешную регистрацию (без пароля)
-    console.log(`✅ User registered: ${newUser.email} (ID: ${newUser.id})`);
+    console.log(`✅ User registered: ${newUser.email} (ID: ${newUser.id}, role: ${role})`);
 
     const response: SignupResponse = {
       success: true,
@@ -167,13 +184,13 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
         token,
         user: {
           ...authUser,
-          createdAt: newUser.createdAt.toISOString()
+          createdAt: newUser.createdAt?.toISOString?.()
         },
         expiresIn
       }
     };
 
-    res.status(201).json(response);
+    res.status(200).json(response);
   } catch (error: any) {
     console.error('Error in signup:', error);
     
@@ -210,6 +227,50 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
         message: process.env.NODE_ENV === 'development' 
           ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
           : 'Внутренняя ошибка сервера'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+export const getMe = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.userId!;
+    const user = await dbService.getUserByEmail(req.userEmail!);
+    if (!user || user.id !== userId) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Пользователь не найден' }
+      };
+      res.status(404).json(response);
+      return;
+    }
+    const role = (user.role === 'employer' ? 'employer' : 'user') as 'user' | 'employer';
+    const data: MeResponse['data'] = {
+      id: user.id,
+      name: user.name || '',
+      surname: user.surname || '',
+      email: user.email,
+      phone: user.phone ? formatPhone(user.phone) : '',
+      role
+    };
+    if (role === 'employer') {
+      const employer = await dbService.getEmployerByUserId(userId);
+      if (employer) {
+        data.company = employer.company;
+        data.description = employer.description ?? undefined;
+        data.website = employer.website ?? undefined;
+      }
+    }
+    const response: MeResponse = { success: true, data };
+    res.status(200).json(response);
+  } catch (error: any) {
+    console.error('Error in getMe:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: process.env.NODE_ENV === 'development' ? error?.message : 'Внутренняя ошибка сервера'
       }
     };
     res.status(500).json(response);

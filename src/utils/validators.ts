@@ -105,7 +105,30 @@ export const signupValidation: ValidationChain[] = [
     .isLength({ min: 6 })
     .withMessage('Пароль должен содержать минимум 6 символов')
     .matches(passwordRegex)
-    .withMessage('Пароль может содержать только латинские буквы, цифры и символы !@#$%^&*()-_=+')
+    .withMessage('Пароль может содержать только латинские буквы, цифры и символы !@#$%^&*()-_=+'),
+
+  body('role')
+    .optional()
+    .isIn(['user', 'employer'])
+    .withMessage('Роль должна быть user или employer'),
+
+  body('company')
+    .optional()
+    .trim()
+    .isLength({ max: 255 })
+    .withMessage('Название компании не более 255 символов'),
+
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 2000 })
+    .withMessage('Описание не более 2000 символов'),
+
+  body('website')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('URL не более 500 символов')
 ];
 
 // UUID validation regex

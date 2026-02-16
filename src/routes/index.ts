@@ -4,8 +4,10 @@ import homepageRoutes from './homepage';
 import favoritesRoutes from './favorites';
 import userStatisticsRoutes from './userStatistics';
 import authRoutes from './auth';
+import offersRoutes from './offers';
 import applyRoutes from './apply';
 import appliesRoutes from './applies';
+import applicationsRoutes from './applications';
 import reportRoutes from './report';
 
 const router = Router();
@@ -64,11 +66,17 @@ router.use('/user/stats', userStatisticsRoutes);
 // Authentication routes
 router.use('/', authRoutes);
 
+// Offers CRUD для заказчика (POST /offers, GET /my/offers, PATCH/DELETE /offers/:id)
+router.use('/', offersRoutes);
+
 // Apply routes
 router.use('/apply', applyRoutes);
 
 // Applies routes (GET /api/applies)
 router.use('/applies', appliesRoutes);
+
+// Applications (PATCH /api/applications/:id — для заказчика)
+router.use('/applications', applicationsRoutes);
 
 // Report routes
 router.use('/report', reportRoutes);

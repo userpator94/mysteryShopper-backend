@@ -1,11 +1,13 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { authService } from '../services/authService';
+import { dbService } from '../services/databaseService';
 import { ApiErrorResponse } from '../types';
 import { AuthenticatedRequest } from './userIdValidator';
 
 export interface JWTPayload {
   user_id: string;
   email?: string;
+  role?: string;
   iat?: number;
   exp?: number;
 }
@@ -70,9 +72,10 @@ export const authenticateJWT = (
         return;
       }
       
-      // Добавляем userId и email в request
+      // Добавляем userId, email и role в request
       req.userId = decoded.user_id;
       req.userEmail = decoded.email;
+      req.userRole = decoded.role || 'user';
       
       next();
     } catch (error: any) {
@@ -105,6 +108,53 @@ export const authenticateJWT = (
       error: {
         code: 'AUTH_ERROR',
         message: 'Ошибка при проверке авторизации'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+/**
+ * Middleware: доступ только для роли employer. Подставляет employerId в request.
+ */
+export const requireEmployer = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (req.userRole !== 'employer') {
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Доступ разрешён только заказчикам'
+      }
+    };
+    res.status(403).json(response);
+    return;
+  }
+  try {
+    const employerId = await dbService.getEmployerIdByUserId(req.userId!);
+    if (!employerId) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Профиль заказчика не найден'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+    req.employerId = employerId;
+    next();
+  } catch (error: any) {
+    console.error('Error in requireEmployer:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: 'Ошибка при проверке прав'
       }
     };
     res.status(500).json(response);

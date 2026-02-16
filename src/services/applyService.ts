@@ -162,6 +162,71 @@ export class ApplyService {
       status: row.status || undefined
     };
   }
+
+  // Список заявок по офферу (для владельца оффера — employer)
+  async getApplicationsByOfferId(offerId: string): Promise<any[]> {
+    const query = `
+      SELECT 
+        oa.id as application_id,
+        oa.offer_id,
+        oa.user_id,
+        oa.applied_at,
+        oa.approved_at,
+        oa.status
+      FROM offer_applications oa
+      WHERE oa.offer_id = $1
+      ORDER BY oa.applied_at DESC
+    `;
+    const result = await this.query(query, [offerId]);
+    return result.rows.map((row: any) => ({
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      applied_at: row.applied_at,
+      approved_at: row.approved_at || undefined,
+      status: row.status || undefined
+    }));
+  }
+
+  // Получить заявку по id (для проверки владельца оффера)
+  async getApplicationById(applicationId: string): Promise<{ offer_id: string; [key: string]: any } | null> {
+    const query = `
+      SELECT id as application_id, offer_id, user_id, applied_at, approved_at, status
+      FROM offer_applications WHERE id = $1
+    `;
+    const result = await this.query(query, [applicationId]);
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      applied_at: row.applied_at,
+      approved_at: row.approved_at || undefined,
+      status: row.status || undefined
+    };
+  }
+
+  // Обновить статус заявки (approved | rejected) — вызывается после проверки прав владельца оффера
+  async updateApplicationStatus(applicationId: string, status: 'approved' | 'rejected'): Promise<any | null> {
+    const query = `
+      UPDATE offer_applications
+      SET status = $1
+      WHERE id = $2
+      RETURNING id as application_id, offer_id, user_id, applied_at, approved_at, status
+    `;
+    const result = await this.query(query, [status, applicationId]);
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      applied_at: row.applied_at,
+      approved_at: row.approved_at || undefined,
+      status: row.status
+    };
+  }
 }
 
 export const applyService = new ApplyService();

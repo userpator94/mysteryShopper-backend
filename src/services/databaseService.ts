@@ -1,6 +1,36 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
 
+/** Очищает одну строку тега от кавычек и обратных слешей */
+function cleanTag(s: string): string {
+  return s.replace(/["\\]/g, '').trim();
+}
+
+/** Приводит tags из БД к массиву строк для API. Всегда возвращает обычный string[] без экранирования. */
+function normalizeTags(value: unknown): string[] {
+  if (value == null) return [];
+
+  let arr: string[] = [];
+
+  if (Array.isArray(value)) {
+    arr = value.map((t) => (typeof t === 'string' ? t : String(t)));
+  } else if (typeof value === 'string') {
+    const s = value.trim();
+    try {
+      const parsed = JSON.parse(s) as unknown;
+      if (Array.isArray(parsed)) {
+        arr = parsed.map((t) => (typeof t === 'string' ? t : String(t)));
+      } else {
+        arr = s.split(',').map((x) => x.trim());
+      }
+    } catch (_) {
+      arr = s.split(',').map((x) => x.trim());
+    }
+  }
+
+  return arr.map(cleanTag).filter(Boolean);
+}
+
 export class DatabaseService {
   private pool: Pool;
 
@@ -19,19 +49,20 @@ export class DatabaseService {
     }
   }
 
-  // Получить все активные предложения
+  // Получить все активные предложения (employer_name/surname из users по e.user_id или из e)
   async getActiveOffers(): Promise<any[]> {
     const query = `
       SELECT 
         o.*,
-        e.name as employer_name,
-        e.surname as employer_surname,
+        u.name as employer_name,
+        u.surname as employer_surname,
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
         (o.max_participants - o.current_participants) as available_slots
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
+      LEFT JOIN users u ON e.user_id = u.id
       LEFT JOIN images i ON o.image_id = i.id
       WHERE o.is_active = TRUE 
         AND o.start_date <= NOW() 
@@ -41,7 +72,7 @@ export class DatabaseService {
     `;
     
     const result = await this.query(query);
-    return result.rows;
+    return result.rows.map((row: { tags?: unknown }) => ({ ...row, tags: normalizeTags(row.tags) }));
   }
 
   // Получить промо-предложения
@@ -49,14 +80,15 @@ export class DatabaseService {
     const query = `
       SELECT 
         o.*,
-        e.name as employer_name,
-        e.surname as employer_surname,
+        u.name as employer_name,
+        u.surname as employer_surname,
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
         (o.max_participants - o.current_participants) as available_slots
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
+      LEFT JOIN users u ON e.user_id = u.id
       LEFT JOIN images i ON o.image_id = i.id
       WHERE o.is_promo = TRUE 
         AND o.is_active = TRUE 
@@ -67,7 +99,7 @@ export class DatabaseService {
     `;
     
     const result = await this.query(query);
-    return result.rows;
+    return result.rows.map((row: { tags?: unknown }) => ({ ...row, tags: normalizeTags(row.tags) }));
   }
 
   // Получить предложение по ID
@@ -75,20 +107,22 @@ export class DatabaseService {
     const query = `
       SELECT 
         o.*,
-        e.name as employer_name,
-        e.surname as employer_surname,
+        u.name as employer_name,
+        u.surname as employer_surname,
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
         (o.max_participants - o.current_participants) as available_slots
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
+      LEFT JOIN users u ON e.user_id = u.id
       LEFT JOIN images i ON o.image_id = i.id
       WHERE o.id = $1
     `;
     
     const result = await this.query(query, [id]);
-    return result.rows[0] || null;
+    const row = result.rows[0] || null;
+    return row ? { ...row, tags: normalizeTags(row.tags) } : null;
   }
 
   // Получить заказчика по ID
@@ -140,14 +174,15 @@ export class DatabaseService {
     let query = `
       SELECT 
         o.*,
-        e.name as employer_name,
-        e.surname as employer_surname,
+        u.name as employer_name,
+        u.surname as employer_surname,
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
         (o.max_participants - o.current_participants) as available_slots
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
+      LEFT JOIN users u ON e.user_id = u.id
       LEFT JOIN images i ON o.image_id = i.id
       WHERE 1=1
     `;
@@ -177,7 +212,7 @@ export class DatabaseService {
     query += ` ORDER BY o.created_at DESC`;
 
     const result = await this.query(query, params);
-    return result.rows;
+    return result.rows.map((row: { tags?: unknown }) => ({ ...row, tags: normalizeTags(row.tags) }));
   }
 
   // Обновить счетчик участников в предложении
@@ -232,7 +267,7 @@ export class DatabaseService {
     return result.rows[0] || null;
   }
 
-  // Получить пользователя по email (включая password_hash для проверки)
+  // Получить пользователя по email (включая password_hash и role для проверки)
   async getUserByEmail(email: string): Promise<any | null> {
     const query = `
       SELECT 
@@ -242,7 +277,8 @@ export class DatabaseService {
         phone,
         name,
         surname,
-        is_active
+        is_active,
+        role
       FROM users
       WHERE email = $1
     `;
@@ -273,18 +309,20 @@ export class DatabaseService {
     return result.rows.length > 0;
   }
 
-  // Создать нового пользователя
+  // Создать нового пользователя (role по умолчанию 'user')
   async createUser(userData: {
     email: string;
-    password: string; // Это уже хешированный пароль
+    password: string;
     phone: string;
     name: string;
     lastname: string;
+    role?: string;
   }): Promise<any> {
+    const role = userData.role === 'employer' ? 'employer' : 'user';
     const query = `
-      INSERT INTO users (email, password_hash, phone, name, surname, is_active, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, TRUE, NOW(), NOW())
-      RETURNING id, email, phone, name, surname, created_at
+      INSERT INTO users (email, password_hash, phone, name, surname, is_active, role, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, TRUE, $6, NOW(), NOW())
+      RETURNING id, email, phone, name, surname, role, created_at
     `;
     
     const result = await this.query(query, [
@@ -292,7 +330,8 @@ export class DatabaseService {
       userData.password,
       userData.phone,
       userData.name,
-      userData.lastname
+      userData.lastname,
+      role
     ]);
 
     return {
@@ -301,8 +340,177 @@ export class DatabaseService {
       phone: result.rows[0].phone,
       name: result.rows[0].name,
       lastname: result.rows[0].surname,
+      role: result.rows[0].role || 'user',
       createdAt: result.rows[0].created_at
     };
+  }
+
+  // Создать запись заказчика (employer): только user_id и доп. данные. Имя, контакты, логин — в users.
+  async createEmployer(data: { user_id: string; company: string; description?: string; website?: string }): Promise<any> {
+    const query = `
+      INSERT INTO employers (user_id, company, description, website, is_active, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW())
+      RETURNING id, user_id, company, description, website, created_at, updated_at
+    `;
+    const result = await this.query(query, [
+      data.user_id,
+      data.company,
+      data.description || null,
+      data.website || null
+    ]);
+    return result.rows[0];
+  }
+
+  // Получить employer по user_id
+  async getEmployerByUserId(userId: string): Promise<any | null> {
+    const query = `SELECT * FROM employers WHERE user_id = $1 AND is_active = TRUE`;
+    const result = await this.query(query, [userId]);
+    return result.rows[0] || null;
+  }
+
+  // Получить employer_id по user_id (для проверки владельца оффера)
+  async getEmployerIdByUserId(userId: string): Promise<string | null> {
+    const emp = await this.getEmployerByUserId(userId);
+    return emp ? emp.id : null;
+  }
+
+  // Офферы текущего заказчика (для GET /api/my/offers)
+  async getOffersByEmployerId(employerId: string, options?: { page?: number; limit?: number }): Promise<{ rows: any[]; total: number }> {
+    const page = Math.max(1, options?.page ?? 1);
+    const limit = Math.min(100, Math.max(1, options?.limit ?? 20));
+    const offset = (page - 1) * limit;
+
+    const countQuery = `SELECT COUNT(*)::int FROM offers WHERE employer_id = $1`;
+    const countResult = await this.query(countQuery, [employerId]);
+    const total = countResult.rows[0]?.count ?? 0;
+
+    const query = `
+      SELECT 
+        o.*,
+        u.name as employer_name,
+        u.surname as employer_surname,
+        e.company as employer_company,
+        i.url as image_url,
+        i.alt_text as image_alt_text,
+        (o.max_participants - o.current_participants) as available_slots
+      FROM offers o
+      JOIN employers e ON o.employer_id = e.id
+      LEFT JOIN users u ON e.user_id = u.id
+      LEFT JOIN images i ON o.image_id = i.id
+      WHERE o.employer_id = $1
+      ORDER BY o.created_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const result = await this.query(query, [employerId, limit, offset]);
+    const rows = result.rows.map((row: { tags?: unknown }) => ({ ...row, tags: normalizeTags(row.tags) }));
+    return { rows, total };
+  }
+
+  // Создать оффер (employer_id из JWT)
+  async createOffer(data: {
+    employer_id: string;
+    title: string;
+    description?: string;
+    price?: number;
+    location?: string;
+    requirements?: string;
+    tags?: string[];
+    start_date: Date;
+    end_date: Date;
+    max_participants: number;
+    is_promo?: boolean;
+    image_id?: string;
+    numeric_info?: number;
+  }): Promise<any> {
+    const tagsJson = Array.isArray(data.tags) ? JSON.stringify(data.tags) : '[]';
+    const query = `
+      INSERT INTO offers (
+        employer_id, title, description, price, location, requirements, tags,
+        start_date, end_date, max_participants, current_participants, is_promo, image_id, numeric_info, is_active, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, 0, $11, $12, $13, TRUE, NOW(), NOW())
+      RETURNING *
+    `;
+    const price = data.price != null && !Number.isNaN(Number(data.price)) ? Number(data.price) : 0;
+    const result = await this.query(query, [
+      data.employer_id,
+      data.title,
+      data.description || null,
+      price,
+      data.location || null,
+      data.requirements || null,
+      tagsJson,
+      data.start_date,
+      data.end_date,
+      data.max_participants,
+      data.is_promo ?? false,
+      data.image_id || null,
+      data.numeric_info ?? price
+    ]);
+    const row = result.rows[0];
+    return row ? { ...row, tags: normalizeTags(row.tags) } : row;
+  }
+
+  // Обновить оффер (частично)
+  async updateOffer(offerId: string, data: Partial<{
+    title: string;
+    description: string;
+    price: number;
+    location: string;
+    requirements: string;
+    tags: string[];
+    start_date: Date;
+    end_date: Date;
+    max_participants: number;
+    is_promo: boolean;
+    is_active: boolean;
+  }>): Promise<any | null> {
+    const allowed = ['title', 'description', 'price', 'location', 'requirements', 'tags', 'start_date', 'end_date', 'max_participants', 'is_promo', 'is_active'];
+    const updates: string[] = [];
+    const values: any[] = [];
+    let i = 0;
+    for (const [key, value] of Object.entries(data)) {
+      if (!allowed.includes(key) || value === undefined) continue;
+      i++;
+      if (key === 'tags') {
+        updates.push(`tags = $${i}::jsonb`);
+        values.push(JSON.stringify(value));
+      } else if (key === 'start_date' || key === 'end_date') {
+        updates.push(`${key} = $${i}`);
+        values.push(value);
+      } else {
+        updates.push(`${key} = $${i}`);
+        values.push(value);
+      }
+    }
+    if (updates.length === 0) return this.getOfferById(offerId);
+    updates.push('updated_at = NOW()');
+    i++;
+    values.push(offerId);
+    const query = `UPDATE offers SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`;
+    const result = await this.query(query, values);
+    const row = result.rows[0] || null;
+    return row ? { ...row, tags: normalizeTags(row.tags) } : null;
+  }
+
+  // Проверить, что оффер принадлежит employer_id
+  async isOfferOwnedByEmployer(offerId: string, employerId: string): Promise<boolean> {
+    const query = `SELECT id FROM offers WHERE id = $1 AND employer_id = $2`;
+    const result = await this.query(query, [offerId, employerId]);
+    return result.rows.length > 0;
+  }
+
+  // Удалить оффер (или мягкое удаление — is_active = false)
+  async deleteOffer(offerId: string, soft: boolean = true): Promise<boolean> {
+    if (soft) {
+      const result = await this.query(
+        'UPDATE offers SET is_active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id',
+        [offerId]
+      );
+      return result.rows.length > 0;
+    }
+    const result = await this.query('DELETE FROM offers WHERE id = $1 RETURNING id', [offerId]);
+    return result.rows.length > 0;
   }
 }
 
