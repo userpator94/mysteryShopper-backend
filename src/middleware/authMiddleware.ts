@@ -115,26 +115,66 @@ export const authenticateJWT = (
 };
 
 /**
- * Middleware: доступ только для роли employer. Подставляет employerId в request.
+ * Middleware: доступ только для роли employer.
+ * Роль берётся из JWT; расшифрованный JWT проверяется по таблице users (user_id и role должны совпадать с БД).
+ * Затем связь с employers по user_id, employerId подставляется в request.
  */
 export const requireEmployer = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  if (req.userRole !== 'employer') {
-    const response: ApiErrorResponse = {
-      success: false,
-      error: {
-        code: 'FORBIDDEN',
-        message: 'Доступ разрешён только заказчикам'
-      }
-    };
-    res.status(403).json(response);
-    return;
-  }
   try {
-    const employerId = await dbService.getEmployerIdByUserId(req.userId!);
+    const userId = req.userId!;
+    const tokenRole = req.userRole;
+
+    const user = await dbService.getUserById(userId);
+    if (!user) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Пользователь не найден'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+    if (!user.is_active) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Пользователь неактивен'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+    if (user.role !== 'employer') {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Доступ разрешён только заказчикам'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+    if (tokenRole !== undefined && tokenRole !== user.role) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Роль в токене не совпадает с ролью в базе данных'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+
+    const employerId = await dbService.getEmployerIdByUserId(userId);
     if (!employerId) {
       const response: ApiErrorResponse = {
         success: false,

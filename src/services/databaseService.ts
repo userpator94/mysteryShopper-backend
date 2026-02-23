@@ -287,6 +287,13 @@ export class DatabaseService {
     return result.rows[0] || null;
   }
 
+  // Получить пользователя по id (для проверки роли по БД, не по JWT)
+  async getUserById(userId: string): Promise<{ id: string; role: string; is_active: boolean } | null> {
+    const query = `SELECT id, role, is_active FROM users WHERE id = $1`;
+    const result = await this.query(query, [userId]);
+    return result.rows[0] || null;
+  }
+
   // Проверить существование email
   async isEmailExists(email: string): Promise<boolean> {
     const query = `
@@ -361,7 +368,7 @@ export class DatabaseService {
     return result.rows[0];
   }
 
-  // Получить employer по user_id
+  // Получить employer по user_id (связь: employers.user_id → users.id)
   async getEmployerByUserId(userId: string): Promise<any | null> {
     const query = `SELECT * FROM employers WHERE user_id = $1 AND is_active = TRUE`;
     const result = await this.query(query, [userId]);
