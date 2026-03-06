@@ -30,7 +30,7 @@ export class ApplyService {
     return result.rows.length > 0;
   }
 
-  // Создать заявку на предложение
+  // Создать заявку на предложение (MVP: сразу переводим в статус approved по стандартной процедуре)
   async createApplication(userId: string, offerId: string): Promise<any> {
     const query = `
       INSERT INTO offer_applications (
@@ -38,14 +38,16 @@ export class ApplyService {
         user_id,
         applied_at,
         approved_at,
-        approved_by
+        approved_by,
+        status
       )
       VALUES (
         $1,
         $2,
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP,
-        '1416fac6-6954-4d49-a35c-684ead433361'
+        '1416fac6-6954-4d49-a35c-684ead433361',
+        'approved'
       )
       RETURNING 
         id as application_id,
@@ -68,11 +70,11 @@ export class ApplyService {
       user_id: result.rows[0].user_id,
       applied_at: result.rows[0].applied_at,
       approved_at: result.rows[0].approved_at || undefined,
-      status: result.rows[0].status || undefined
+      status: result.rows[0].status ?? 'approved'
     };
   }
 
-  // Получить все заявки пользователя
+  // Получить все заявки пользователя (без cancelled)
   async getUserApplications(userId: string): Promise<any[]> {
     const query = `
       SELECT 
@@ -83,7 +85,7 @@ export class ApplyService {
         approved_at,
         status
       FROM offer_applications
-      WHERE user_id = $1
+      WHERE user_id = $1 AND (status IS NULL OR status != 'cancelled')
       ORDER BY applied_at DESC
     `;
     
