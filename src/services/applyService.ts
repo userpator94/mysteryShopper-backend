@@ -78,15 +78,16 @@ export class ApplyService {
   async getUserApplications(userId: string): Promise<any[]> {
     const query = `
       SELECT 
-        id as application_id,
-        offer_id,
-        user_id,
-        applied_at,
-        approved_at,
-        status
-      FROM offer_applications
-      WHERE user_id = $1 AND (status IS NULL OR status != 'cancelled')
-      ORDER BY applied_at DESC
+        oa.id as application_id,
+        oa.offer_id,
+        oa.user_id,
+        oa.applied_at,
+        oa.approved_at,
+        oa.status,
+        EXISTS (SELECT 1 FROM offer_reports r WHERE r.application_id = oa.id) AS has_report
+      FROM offer_applications oa
+      WHERE oa.user_id = $1 AND (oa.status IS NULL OR oa.status != 'cancelled')
+      ORDER BY oa.applied_at DESC
     `;
     
     const result = await this.query(query, [userId]);
@@ -96,7 +97,8 @@ export class ApplyService {
       user_id: row.user_id,
       applied_at: row.applied_at,
       approved_at: row.approved_at || undefined,
-      status: row.status || undefined
+      status: row.status || undefined,
+      has_report: Boolean(row.has_report)
     }));
   }
 
@@ -104,15 +106,16 @@ export class ApplyService {
   async getUserApplicationByOfferId(userId: string, offerId: string): Promise<any | null> {
     const query = `
       SELECT 
-        id as application_id,
-        offer_id,
-        user_id,
-        applied_at,
-        approved_at,
-        status
-      FROM offer_applications
-      WHERE user_id = $1 AND offer_id = $2 AND (status IS NULL OR status != 'cancelled')
-      ORDER BY applied_at DESC
+        oa.id as application_id,
+        oa.offer_id,
+        oa.user_id,
+        oa.applied_at,
+        oa.approved_at,
+        oa.status,
+        EXISTS (SELECT 1 FROM offer_reports r WHERE r.application_id = oa.id) AS has_report
+      FROM offer_applications oa
+      WHERE oa.user_id = $1 AND oa.offer_id = $2 AND (oa.status IS NULL OR oa.status != 'cancelled')
+      ORDER BY oa.applied_at DESC
       LIMIT 1
     `;
     
@@ -129,7 +132,8 @@ export class ApplyService {
       user_id: row.user_id,
       applied_at: row.applied_at,
       approved_at: row.approved_at || undefined,
-      status: row.status || undefined
+      status: row.status || undefined,
+      has_report: Boolean(row.has_report)
     };
   }
 

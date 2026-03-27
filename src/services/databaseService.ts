@@ -102,6 +102,25 @@ export class DatabaseService {
     return result.rows.map((row: { tags?: unknown }) => ({ ...row, tags: normalizeTags(row.tags) }));
   }
 
+  /**
+   * Редактирование задачи заказчиком запрещено, если есть отчёт
+   * или заявка в статусе «в работе» (принята / выполняется / завершена).
+   */
+  async offerEditLocked(offerId: string): Promise<boolean> {
+    const q = `
+      SELECT (
+        EXISTS (SELECT 1 FROM offer_reports r WHERE r.offer_id = $1)
+        OR EXISTS (
+          SELECT 1 FROM offer_applications oa
+          WHERE oa.offer_id = $1
+            AND oa.status IN ('approved', 'in_progress', 'completed')
+        )
+      ) AS locked
+    `;
+    const r = await this.query(q, [offerId]);
+    return Boolean(r.rows[0]?.locked);
+  }
+
   // Получить предложение по ID
   async getOfferById(id: string): Promise<any | null> {
     const query = `
@@ -112,7 +131,15 @@ export class DatabaseService {
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
-        (o.max_participants - o.current_participants) as available_slots
+        (o.max_participants - o.current_participants) as available_slots,
+        NOT (
+          EXISTS (SELECT 1 FROM offer_reports r WHERE r.offer_id = o.id)
+          OR EXISTS (
+            SELECT 1 FROM offer_applications oa
+            WHERE oa.offer_id = o.id
+              AND oa.status IN ('approved', 'in_progress', 'completed')
+          )
+        ) AS can_edit
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
       LEFT JOIN users u ON e.user_id = u.id
@@ -399,7 +426,15 @@ export class DatabaseService {
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
-        (o.max_participants - o.current_participants) as available_slots
+        (o.max_participants - o.current_participants) as available_slots,
+        NOT (
+          EXISTS (SELECT 1 FROM offer_reports r WHERE r.offer_id = o.id)
+          OR EXISTS (
+            SELECT 1 FROM offer_applications oa
+            WHERE oa.offer_id = o.id
+              AND oa.status IN ('approved', 'in_progress', 'completed')
+          )
+        ) AS can_edit
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
       LEFT JOIN users u ON e.user_id = u.id
@@ -428,17 +463,26 @@ export class DatabaseService {
     is_promo?: boolean;
     image_id?: string;
     numeric_info?: number;
+    checklist_schema?: unknown | null;
+    schema_version?: number;
   }): Promise<any> {
     const tagsJson = Array.isArray(data.tags) ? JSON.stringify(data.tags) : '[]';
     const query = `
       INSERT INTO offers (
         employer_id, title, description, price, location, requirements, tags,
-        start_date, end_date, max_participants, current_participants, is_promo, image_id, numeric_info, is_active, created_at, updated_at
+        start_date, end_date, max_participants, current_participants, is_promo, image_id, numeric_info, is_active, created_at, updated_at,
+        checklist_schema, schema_version
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, 0, $11, $12, $13, TRUE, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, 0, $11, $12, $13, TRUE, NOW(), NOW(), $14::jsonb, $15)
       RETURNING *
     `;
     const price = data.price != null && !Number.isNaN(Number(data.price)) ? Number(data.price) : 0;
+    const checklistJson =
+      data.checklist_schema !== undefined && data.checklist_schema !== null
+        ? JSON.stringify(data.checklist_schema)
+        : null;
+    const schemaVer =
+      typeof data.schema_version === 'number' && !Number.isNaN(data.schema_version) ? data.schema_version : 1;
     const result = await this.query(query, [
       data.employer_id,
       data.title,
@@ -452,10 +496,26 @@ export class DatabaseService {
       data.max_participants,
       data.is_promo ?? false,
       data.image_id || null,
-      data.numeric_info ?? price
+      data.numeric_info ?? price,
+      checklistJson,
+      schemaVer
     ]);
     const row = result.rows[0];
     return row ? { ...row, tags: normalizeTags(row.tags) } : row;
+  }
+
+  async verifyApplicationForUser(
+    applicationId: string,
+    userId: string,
+    offerId: string
+  ): Promise<boolean> {
+    const q = `
+      SELECT 1 FROM offer_applications
+      WHERE id = $1 AND user_id = $2 AND offer_id = $3
+      LIMIT 1
+    `;
+    const r = await this.query(q, [applicationId, userId, offerId]);
+    return r.rows.length > 0;
   }
 
   // Обновить оффер (частично)
@@ -471,8 +531,14 @@ export class DatabaseService {
     max_participants: number;
     is_promo: boolean;
     is_active: boolean;
+    checklist_schema: unknown | null;
+    schema_version: number;
   }>): Promise<any | null> {
-    const allowed = ['title', 'description', 'price', 'location', 'requirements', 'tags', 'start_date', 'end_date', 'max_participants', 'is_promo', 'is_active'];
+    const allowed = [
+      'title', 'description', 'price', 'location', 'requirements', 'tags',
+      'start_date', 'end_date', 'max_participants', 'is_promo', 'is_active',
+      'checklist_schema', 'schema_version'
+    ];
     const updates: string[] = [];
     const values: any[] = [];
     let i = 0;
@@ -482,6 +548,9 @@ export class DatabaseService {
       if (key === 'tags') {
         updates.push(`tags = $${i}::jsonb`);
         values.push(JSON.stringify(value));
+      } else if (key === 'checklist_schema') {
+        updates.push(`checklist_schema = $${i}::jsonb`);
+        values.push(value === null ? null : JSON.stringify(value));
       } else if (key === 'start_date' || key === 'end_date') {
         updates.push(`${key} = $${i}`);
         values.push(value);
@@ -505,6 +574,74 @@ export class DatabaseService {
     const query = `SELECT id FROM offers WHERE id = $1 AND employer_id = $2`;
     const result = await this.query(query, [offerId, employerId]);
     return result.rows.length > 0;
+  }
+
+  /** Отчёты по офферу для заказчика (без PII исполнителя) */
+  async getEmployerOfferReports(
+    employerId: string,
+    offerId: string,
+    sortBy: 'submitted_at' | 'task_completed_at'
+  ): Promise<any[]> {
+    const orderSql =
+      sortBy === 'task_completed_at'
+        ? 'oa.completed_at DESC NULLS LAST, r.submitted_at DESC'
+        : 'r.submitted_at DESC';
+    const query = `
+      SELECT
+        r.id,
+        r.submitted_at,
+        oa.completed_at AS task_completed_at,
+        r.rating,
+        r.comments,
+        r.feedback,
+        r.checklist_answers,
+        r.checklist_schema_version,
+        r.checklist_schema_snapshot,
+        r.photos,
+        RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix
+      FROM offer_reports r
+      JOIN offers o ON o.id = r.offer_id
+      JOIN offer_applications oa ON oa.id = r.application_id
+      WHERE r.offer_id = $1 AND o.employer_id = $2
+      ORDER BY ${orderSql}
+    `;
+    const result = await this.query(query, [offerId, employerId]);
+    return result.rows.map((row: { executor_suffix: string }) => ({
+      ...row,
+      executor_label: `Исполнитель …${row.executor_suffix}`
+    }));
+  }
+
+  async getEmployerOfferReportById(
+    employerId: string,
+    offerId: string,
+    reportId: string
+  ): Promise<any | null> {
+    const query = `
+      SELECT
+        r.id,
+        r.submitted_at,
+        oa.completed_at AS task_completed_at,
+        r.rating,
+        r.comments,
+        r.feedback,
+        r.checklist_answers,
+        r.checklist_schema_version,
+        r.checklist_schema_snapshot,
+        r.photos,
+        RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix
+      FROM offer_reports r
+      JOIN offers o ON o.id = r.offer_id
+      JOIN offer_applications oa ON oa.id = r.application_id
+      WHERE r.id = $1 AND r.offer_id = $2 AND o.employer_id = $3
+    `;
+    const result = await this.query(query, [reportId, offerId, employerId]);
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      ...row,
+      executor_label: `Исполнитель …${row.executor_suffix}`
+    };
   }
 
   // Удалить оффер (или мягкое удаление — is_active = false)

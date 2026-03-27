@@ -246,6 +246,8 @@ export interface Application {
   applied_at: string;
   approved_at?: string;
   status?: string;
+  /** Уже есть отчёт по этой заявке — повторно отправить нельзя */
+  has_report?: boolean;
 }
 
 export interface GetAppliesResponse {
@@ -275,7 +277,7 @@ export interface ReportResponse {
     application_id: string;
     offer_id: string;
     user_id: string;
-    rating: number;
+    rating: number | null;
     feedback: Record<string, any>;
     photos: string[]; // Массив ID изображений из таблицы images
     created_at: string;
