@@ -44,6 +44,21 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
       }
     }
 
+    let checklistPhotoItemIds: string[] | null = null;
+    const rawPhotoIds = bodyData.checklist_photo_item_ids;
+    if (rawPhotoIds !== undefined && rawPhotoIds !== null && rawPhotoIds !== '') {
+      if (typeof rawPhotoIds === 'string') {
+        try {
+          const parsed = JSON.parse(rawPhotoIds);
+          checklistPhotoItemIds = Array.isArray(parsed) ? parsed.map((x: unknown) => String(x)) : null;
+        } catch {
+          checklistPhotoItemIds = null;
+        }
+      } else if (Array.isArray(rawPhotoIds)) {
+        checklistPhotoItemIds = rawPhotoIds.map((x: unknown) => String(x));
+      }
+    }
+
     const { application_id, offer_id, user_id } = bodyData;
     const jwtUserId = req.userId;
 
@@ -171,6 +186,7 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
         rating: ratingNum as number | null,
         commentsText: commentsText || null,
         checklistAnswers,
+        checklistPhotoItemIds,
         photoFiles
       });
 
@@ -208,6 +224,30 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
         } as ApiErrorResponse);
         return;
       }
+      if (msg === 'APPLICATION_NOT_FOUND') {
+        res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Заявка не найдена' }
+        } as ApiErrorResponse);
+        return;
+      }
+      if (msg === 'APPLICATION_NOT_ELIGIBLE_FOR_REPORT') {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Отчёт можно отправить только при статусе заявки «принята» или «в работе»'
+          }
+        } as ApiErrorResponse);
+        return;
+      }
+      if (msg === 'REPORT_DEADLINE_PASSED') {
+        res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Срок сдачи отчёта по задаче истёк' }
+        } as ApiErrorResponse);
+        return;
+      }
       if (msg.startsWith('SCHEMA_ERROR:')) {
         res.status(422).json({
           success: false,
@@ -228,14 +268,12 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
       if (
         msg === 'CHECKLIST_ANSWERS_REQUIRED' ||
         msg === 'RATING_REQUIRED' ||
-        msg === 'COMMENT_REQUIRED' ||
-        msg === 'NO_PHOTOS_WITH_CHECKLIST'
+        msg === 'COMMENT_REQUIRED'
       ) {
         const human: Record<string, string> = {
           CHECKLIST_ANSWERS_REQUIRED: 'Для этого задания нужны ответы по чек-листу',
           RATING_REQUIRED: 'Укажите оценку от 1 до 5',
-          COMMENT_REQUIRED: 'Заполните текстовый комментарий к отчёту',
-          NO_PHOTOS_WITH_CHECKLIST: 'Для отчёта по чек-листу фотографии не принимаются'
+          COMMENT_REQUIRED: 'Заполните текстовый комментарий к отчёту'
         };
         res.status(422).json({
           success: false,

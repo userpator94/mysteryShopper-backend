@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
+import { MAX_PARTICIPANTS_UNLIMITED } from '../config/offerLimits';
 import { FavoriteOffer } from '../types';
 
 export class FavoritesService {
@@ -43,6 +44,8 @@ export class FavoritesService {
         SELECT 
           o.id,
           CASE 
+            WHEN o.is_active = FALSE THEN false
+            WHEN o.max_participants = ${MAX_PARTICIPANTS_UNLIMITED} THEN true
             WHEN (o.max_participants - o.current_participants) > 0 
             THEN true 
             ELSE false 

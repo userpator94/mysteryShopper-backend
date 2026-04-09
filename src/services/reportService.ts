@@ -1,6 +1,10 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
-import { parseChecklistSchema, validateAnswersAgainstSchema } from '../utils/checklistSchemaValidator';
+import {
+  parseChecklistSchema,
+  validateAnswersAgainstSchema,
+  type ChecklistSchema
+} from '../utils/checklistSchemaValidator';
 
 export class ReportService {
   private pool: Pool;
@@ -53,6 +57,53 @@ export class ReportService {
   /**
    * Создание отчёта: стандартный (рейтинг + текст) или ответы по чек-листу.
    */
+  /**
+   * Проверка согласованности файлов с пунктами photo_text и обязательных полей.
+   */
+  private validatePhotoTextLinkage(
+    schema: ChecklistSchema,
+    answers: Record<string, unknown>,
+    photoItemIds: string[],
+    fileCount: number
+  ): void {
+    if (fileCount !== photoItemIds.length) {
+      throw new Error(
+        'VALIDATION:Число загруженных файлов не совпадает со списком checklist_photo_item_ids'
+      );
+    }
+    const seen = new Set<string>();
+    for (const id of photoItemIds) {
+      if (seen.has(id)) {
+        throw new Error('VALIDATION:В checklist_photo_item_ids повторяется id пункта');
+      }
+      seen.add(id);
+      const item = schema.items.find((i) => i.id === id);
+      if (!item || item.type !== 'photo_text') {
+        throw new Error('VALIDATION:Файл привязан к недопустимому пункту чек-листа');
+      }
+      if (answers[id] === undefined) {
+        throw new Error('VALIDATION:Нет текстового ответа для пункта с фото');
+      }
+    }
+
+    for (const item of schema.items) {
+      if (item.type !== 'photo_text') continue;
+      const hasAns = answers[item.id] !== undefined;
+      const hasFile = photoItemIds.includes(item.id);
+      if (item.required) {
+        if (!hasAns || !hasFile) {
+          throw new Error(
+            `VALIDATION:Для пункта «${item.label}» требуются фото и пояснение`
+          );
+        }
+      } else if (hasAns !== hasFile) {
+        throw new Error(
+          `VALIDATION:Для пункта «${item.label}» укажите и фото, и пояснение или оставьте пункт пустым`
+        );
+      }
+    }
+  }
+
   async createReport(params: {
     applicationId: string;
     offerId: string;
@@ -60,6 +111,8 @@ export class ReportService {
     rating: number | null;
     commentsText: string | null;
     checklistAnswers: Record<string, unknown> | null;
+    /** Id пунктов photo_text в том же порядке, что и файлы в photoFiles */
+    checklistPhotoItemIds: string[] | null;
     photoFiles: Array<{
       filename: string;
       originalname: string;
@@ -90,6 +143,26 @@ export class ReportService {
         throw new Error('REPORT_ALREADY_EXISTS');
       }
 
+      const appRes = await this.queryWithClient(
+        client,
+        `SELECT oa.status::text AS status, o.end_date
+         FROM offer_applications oa
+         JOIN offers o ON o.id = oa.offer_id
+         WHERE oa.id = $1 AND oa.user_id = $2 AND oa.offer_id = $3`,
+        [params.applicationId, params.userId, params.offerId]
+      );
+      if (appRes.rows.length === 0) {
+        throw new Error('APPLICATION_NOT_FOUND');
+      }
+      const appStatus = String(appRes.rows[0].status || '').toLowerCase();
+      if (appStatus !== 'approved' && appStatus !== 'in_progress') {
+        throw new Error('APPLICATION_NOT_ELIGIBLE_FOR_REPORT');
+      }
+      const endDate = appRes.rows[0].end_date as Date;
+      if (endDate && new Date(endDate) < new Date()) {
+        throw new Error('REPORT_DEADLINE_PASSED');
+      }
+
       const offerRes = await this.queryWithClient(
         client,
         `SELECT employer_id, checklist_schema, schema_version FROM offers WHERE id = $1`,
@@ -114,6 +187,7 @@ export class ReportService {
       let checklistAnswersJson: string | null = null;
       let checklistSnapshotJson: string | null = null;
       let checklistVer: number | null = null;
+      const photoIds: string[] = [];
 
       if (hasCustomSchema && parsed.schema) {
         if (!params.checklistAnswers) {
@@ -125,7 +199,39 @@ export class ReportService {
         }
         rating = null;
         comments = null;
-        checklistAnswersJson = JSON.stringify(v.answers);
+        const photoItemIds = params.checklistPhotoItemIds ?? [];
+        this.validatePhotoTextLinkage(
+          parsed.schema,
+          v.answers as Record<string, unknown>,
+          photoItemIds,
+          params.photoFiles.length
+        );
+
+        let mergedAnswers: Record<string, unknown> = { ...(v.answers as Record<string, unknown>) };
+        for (let i = 0; i < params.photoFiles.length; i++) {
+          const file = params.photoFiles[i];
+          const itemId = photoItemIds[i];
+          const imageId = await this.createImageWithClient(
+            client,
+            file.filename,
+            file.originalname,
+            file.mimetype,
+            file.size,
+            file.buffer
+          );
+          photoIds.push(imageId);
+          const base = mergedAnswers[itemId];
+          const baseObj =
+            typeof base === 'object' && base !== null && !Array.isArray(base)
+              ? (base as Record<string, unknown>)
+              : {};
+          mergedAnswers[itemId] = {
+            ...baseObj,
+            photo_url: `/api/images/${imageId}`
+          };
+        }
+
+        checklistAnswersJson = JSON.stringify(mergedAnswers);
         checklistSnapshotJson = JSON.stringify(parsed.schema);
         checklistVer = schemaVersion;
         feedbackJson = JSON.stringify({ mode: 'checklist' });
@@ -139,23 +245,20 @@ export class ReportService {
         }
         comments = text;
         feedbackJson = JSON.stringify({ comment: text, mode: 'standard' });
-      }
-
-      if (hasCustomSchema && params.photoFiles.length > 0) {
-        throw new Error('NO_PHOTOS_WITH_CHECKLIST');
-      }
-
-      const photoIds: string[] = [];
-      for (const file of params.photoFiles) {
-        const imageId = await this.createImageWithClient(
-          client,
-          file.filename,
-          file.originalname,
-          file.mimetype,
-          file.size,
-          file.buffer
-        );
-        photoIds.push(imageId);
+        if (params.checklistPhotoItemIds && params.checklistPhotoItemIds.length > 0) {
+          throw new Error('VALIDATION:Поле checklist_photo_item_ids допустимо только для отчёта с чек-листом');
+        }
+        for (const file of params.photoFiles) {
+          const imageId = await this.createImageWithClient(
+            client,
+            file.filename,
+            file.originalname,
+            file.mimetype,
+            file.size,
+            file.buffer
+          );
+          photoIds.push(imageId);
+        }
       }
 
       const reportQuery = `

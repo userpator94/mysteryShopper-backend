@@ -14,7 +14,7 @@ export const CHECKLIST_TEXT_MAX_LENGTH = Math.min(
 
 export const MAX_SINGLE_CHOICE_OPTIONS = 50;
 
-export type ChecklistItemType = 'boolean' | 'scale_1_5' | 'text' | 'single_choice';
+export type ChecklistItemType = 'boolean' | 'scale_1_5' | 'text' | 'single_choice' | 'photo_text';
 
 export interface ChecklistItem {
   id: string;
@@ -65,7 +65,7 @@ export function parseChecklistSchema(raw: unknown): { ok: true; schema: Checklis
     }
     seenIds.add(id);
     const type = it.type as string;
-    if (!['boolean', 'scale_1_5', 'text', 'single_choice'].includes(type)) {
+    if (!['boolean', 'scale_1_5', 'text', 'single_choice', 'photo_text'].includes(type)) {
       return { ok: false, message: `Элемент ${i + 1}: неизвестный type` };
     }
     const label = typeof it.label === 'string' ? it.label.trim() : '';
@@ -136,6 +136,20 @@ export function validateAnswersAgainstSchema(
           return { ok: false, message: `Неверный вариант: ${item.label}`, field: item.id };
         }
         out[item.id] = s;
+        break;
+      }
+      case 'photo_text': {
+        if (!isPlainObject(v)) {
+          return { ok: false, message: `Ожидается объект с полем explanation: ${item.label}`, field: item.id };
+        }
+        const expl = typeof v.explanation === 'string' ? v.explanation.trim() : '';
+        if (!expl) {
+          return { ok: false, message: `Заполните пояснение к фото: ${item.label}`, field: item.id };
+        }
+        if (expl.length > CHECKLIST_TEXT_MAX_LENGTH) {
+          return { ok: false, message: `Текст слишком длинный: ${item.label}`, field: item.id };
+        }
+        out[item.id] = { explanation: expl };
         break;
       }
       default:

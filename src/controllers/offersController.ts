@@ -2,7 +2,43 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { ApiErrorResponse } from '../types';
 import { dbService } from '../services/databaseService';
+import { MAX_PARTICIPANTS_UNLIMITED } from '../config/offerLimits';
 import { parseChecklistSchema } from '../utils/checklistSchemaValidator';
+
+/**
+ * Лимит: 1…998 или MAX_PARTICIPANTS_UNLIMITED (999) = без ограничения.
+ * Поле не передано — по умолчанию 1.
+ */
+function parseMaxParticipantsForCreate(raw: unknown): { ok: true; value: number } | { ok: false; message: string } {
+  if (raw === undefined) return { ok: true, value: 1 };
+  if (raw === null || (typeof raw === 'string' && raw.trim() === '')) return { ok: true, value: 1 };
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (Number.isNaN(n) || !Number.isInteger(n)) {
+    return { ok: false, message: 'max_participants: целое число 1–998 или 999 (без лимита)' };
+  }
+  if (n === MAX_PARTICIPANTS_UNLIMITED) return { ok: true, value: n };
+  if (n >= 1 && n <= 998) return { ok: true, value: n };
+  return {
+    ok: false,
+    message: `max_participants: от 1 до 998 или ${MAX_PARTICIPANTS_UNLIMITED} (без лимита)`
+  };
+}
+
+function normalizeMaxParticipantsPatch(raw: unknown): { ok: true; value: number } | { ok: false; message: string } {
+  if (raw === null || raw === undefined) {
+    return { ok: false, message: 'max_participants: укажите целое число 1–998 или 999 (без лимита)' };
+  }
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (Number.isNaN(n) || !Number.isInteger(n)) {
+    return { ok: false, message: 'max_participants: целое число 1–998 или 999 (без лимита)' };
+  }
+  if (n === MAX_PARTICIPANTS_UNLIMITED) return { ok: true, value: n };
+  if (n >= 1 && n <= 998) return { ok: true, value: n };
+  return {
+    ok: false,
+    message: `max_participants: от 1 до 998 или ${MAX_PARTICIPANTS_UNLIMITED} (без лимита)`
+  };
+}
 
 export const createOffer = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -11,19 +47,27 @@ export const createOffer = async (req: AuthenticatedRequest, res: Response): Pro
     const title = typeof raw.title === 'string' ? raw.title.trim() : '';
     const start_date = raw.start_date;
     const end_date = raw.end_date;
-    const max_participants = Number(raw.max_participants);
+    const maxParsed = parseMaxParticipantsForCreate(raw.max_participants);
+    if (!maxParsed.ok) {
+      res.status(422).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: maxParsed.message }
+      } as ApiErrorResponse);
+      return;
+    }
+    const max_participants = maxParsed.value;
     const price =
       raw.price !== undefined && raw.price !== null && raw.price !== ''
         ? Number(raw.price)
         : 0;
     const priceNumber: number = Number.isNaN(price) || price < 0 ? 0 : price;
 
-    if (!title || !start_date || !end_date || (max_participants !== 0 && Number.isNaN(max_participants))) {
+    if (!title || !start_date || !end_date) {
       const response: ApiErrorResponse = {
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Обязательные поля: title, start_date, end_date, max_participants',
+          message: 'Обязательные поля: title, start_date, end_date',
           field: 'body'
         }
       };
@@ -80,7 +124,7 @@ export const createOffer = async (req: AuthenticatedRequest, res: Response): Pro
       tags: tags.length ? tags : undefined,
       start_date: startDate,
       end_date: endDate,
-      max_participants: Math.max(0, Number.isNaN(max_participants) ? 0 : max_participants),
+      max_participants,
       is_promo: Boolean(raw.is_promo),
       image_id: typeof raw.image_id === 'string' ? raw.image_id : undefined,
       checklist_schema: checklist_schema === undefined ? undefined : checklist_schema,
@@ -197,6 +241,18 @@ export const updateOffer = async (req: AuthenticatedRequest, res: Response): Pro
       }
     }
 
+    if (updates.max_participants !== undefined) {
+      const mp = normalizeMaxParticipantsPatch(updates.max_participants);
+      if (!mp.ok) {
+        res.status(422).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: mp.message }
+        } as ApiErrorResponse);
+        return;
+      }
+      updates.max_participants = mp.value;
+    }
+
     const offer = await dbService.updateOffer(id, updates as any);
     if (!offer) {
       const response: ApiErrorResponse = {
@@ -255,6 +311,52 @@ export const deleteOffer = async (req: AuthenticatedRequest, res: Response): Pro
       error: {
         code: 'SERVER_ERROR',
         message: process.env.NODE_ENV === 'development' ? error?.message : 'Ошибка при удалении задачи'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+/** POST /api/offers/:id/close-early — досрочное закрытие (только владелец). Идемпотентно. */
+export const closeOfferEarly = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const employerId = req.employerId!;
+
+    const isOwner = await dbService.isOfferOwnedByEmployer(id, employerId);
+    if (!isOwner) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Нет прав на закрытие этой задачи' }
+      };
+      res.status(403).json(response);
+      return;
+    }
+
+    const result = await dbService.closeOfferEarlyForEmployer(id, employerId);
+    if (result.status === 'not_found') {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Задача не найдена' }
+      } as ApiErrorResponse);
+      return;
+    }
+    if (result.status === 'already_ended') {
+      res.status(422).json({
+        success: false,
+        error: { code: 'OFFER_PERIOD_ENDED', message: 'Срок задачи уже истёк' }
+      } as ApiErrorResponse);
+      return;
+    }
+
+    res.status(200).json({ success: true, data: result.offer });
+  } catch (error: any) {
+    console.error('Error closing offer early:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: process.env.NODE_ENV === 'development' ? error?.message : 'Ошибка при закрытии задачи'
       }
     };
     res.status(500).json(response);

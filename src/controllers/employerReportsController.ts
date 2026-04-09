@@ -2,6 +2,13 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { ApiErrorResponse } from '../types';
 import { dbService } from '../services/databaseService';
+import { buildOfferReportPdfBuffer } from '../services/reportPdfService';
+
+const REPORT_STATUS = 'accepted_auto';
+
+function withReportStatus<T extends Record<string, unknown>>(row: T): T & { report_status: string } {
+  return { ...row, report_status: REPORT_STATUS };
+}
 
 export const getOfferReports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -21,7 +28,7 @@ export const getOfferReports = async (req: AuthenticatedRequest, res: Response):
     }
 
     const rows = await dbService.getEmployerOfferReports(employerId, offerId, sortBy);
-    res.status(200).json({ success: true, data: rows });
+    res.status(200).json({ success: true, data: rows.map((r) => withReportStatus(r)) });
   } catch (error: any) {
     console.error('getOfferReports:', error);
     const response: ApiErrorResponse = {
@@ -47,12 +54,45 @@ export const getOfferReportById = async (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    res.status(200).json({ success: true, data: row });
+    res.status(200).json({ success: true, data: withReportStatus(row) });
   } catch (error: any) {
     console.error('getOfferReportById:', error);
     const response: ApiErrorResponse = {
       success: false,
       error: { code: 'SERVER_ERROR', message: 'Ошибка при загрузке отчёта' }
+    };
+    res.status(500).json(response);
+  }
+};
+
+export const downloadOfferReportPdf = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const employerId = req.employerId!;
+    const { offerId, reportId } = req.params;
+
+    const row = await dbService.getEmployerOfferReportById(employerId, offerId, reportId);
+    if (!row) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Отчёт не найден' }
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+    const host = req.get('host') || 'localhost';
+    const baseUrl = `${proto}://${host}`;
+
+    const pdf = await buildOfferReportPdfBuffer(row, baseUrl);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="report-${reportId}.pdf"`);
+    res.status(200).send(pdf);
+  } catch (error: any) {
+    console.error('downloadOfferReportPdf:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Ошибка генерации PDF' }
     };
     res.status(500).json(response);
   }

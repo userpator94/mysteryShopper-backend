@@ -37,8 +37,22 @@ export const applyToOffer = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
+    const hasSlot = await dbService.offerHasFreeSlot(offer_id);
+    if (!hasSlot) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'OFFER_FULL',
+          message: 'Достигнут лимит исполнителей по этой задаче'
+        }
+      };
+      res.status(409).json(response);
+      return;
+    }
+
     // Создание заявки
     const application = await applyService.createApplication(userId, offer_id);
+    await dbService.updateOfferParticipants(offer_id);
     
     const response: ApplyResponse = {
       success: true,
@@ -188,6 +202,9 @@ export const patchApplicationStatus = async (req: AuthenticatedRequest, res: Res
     }
 
     const updated = await applyService.updateApplicationStatus(applicationId, status as 'approved' | 'rejected');
+    if (updated?.offer_id) {
+      await dbService.updateOfferParticipants(updated.offer_id);
+    }
     res.status(200).json({ success: true, data: updated });
   } catch (error: any) {
     console.error('Error updating application status:', error);
@@ -219,7 +236,7 @@ export const cancelApplication = async (req: AuthenticatedRequest, res: Response
 
     // Отмена заявки
     const application = await applyService.cancelApplication(userId, offer_id as string);
-    
+
     if (!application) {
       const response: ApiErrorResponse = {
         success: false,
@@ -231,6 +248,8 @@ export const cancelApplication = async (req: AuthenticatedRequest, res: Response
       res.status(404).json(response);
       return;
     }
+
+    await dbService.updateOfferParticipants(application.offer_id);
 
     const response: ApplyResponse = {
       success: true,

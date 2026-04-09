@@ -1,5 +1,10 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
+import { MAX_PARTICIPANTS_UNLIMITED } from '../config/offerLimits';
+import { userInitials, formatExecutorMaskLabel } from '../utils/userDisplay';
+
+/** Свободные места; при «без лимита» (999) — NULL. */
+const AVAILABLE_SLOTS_EXPR = `(CASE WHEN o.max_participants = ${MAX_PARTICIPANTS_UNLIMITED} THEN NULL ELSE (o.max_participants - o.current_participants) END)`;
 
 /** Очищает одну строку тега от кавычек и обратных слешей */
 function cleanTag(s: string): string {
@@ -59,7 +64,7 @@ export class DatabaseService {
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
-        (o.max_participants - o.current_participants) as available_slots
+        ${AVAILABLE_SLOTS_EXPR} as available_slots
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
       LEFT JOIN users u ON e.user_id = u.id
@@ -85,7 +90,7 @@ export class DatabaseService {
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
-        (o.max_participants - o.current_participants) as available_slots
+        ${AVAILABLE_SLOTS_EXPR} as available_slots
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
       LEFT JOIN users u ON e.user_id = u.id
@@ -131,7 +136,7 @@ export class DatabaseService {
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
-        (o.max_participants - o.current_participants) as available_slots,
+        ${AVAILABLE_SLOTS_EXPR} as available_slots,
         NOT (
           EXISTS (SELECT 1 FROM offer_reports r WHERE r.offer_id = o.id)
           OR EXISTS (
@@ -150,6 +155,48 @@ export class DatabaseService {
     const result = await this.query(query, [id]);
     const row = result.rows[0] || null;
     return row ? { ...row, tags: normalizeTags(row.tags) } : null;
+  }
+
+  /**
+   * Исполнители, принятые по задаче (approved / in_progress) — «в работе» до завершения отчёта.
+   * Для карточки заказчика: id + инициалы.
+   */
+  async getOfferActiveExecutors(
+    offerId: string
+  ): Promise<Array<{ user_id: string; initials: string }>> {
+    const q = `
+      SELECT oa.user_id, u.name, u.surname
+      FROM offer_applications oa
+      JOIN users u ON u.id = oa.user_id
+      WHERE oa.offer_id = $1
+        AND oa.status IN ('approved', 'in_progress')
+      ORDER BY oa.approved_at NULLS LAST, oa.applied_at ASC
+    `;
+    const r = await this.query(q, [offerId]);
+    return (r.rows as Array<{ user_id: string; name: string; surname: string }>).map((row) => ({
+      user_id: row.user_id,
+      initials: userInitials(row.name, row.surname)
+    }));
+  }
+
+  /** Число занятых мест (по тем же статусам, что и current_participants на оффере). */
+  async getOccupiedSlotsCount(offerId: string): Promise<number> {
+    const r = await this.query(
+      `SELECT COUNT(*)::int AS c FROM offer_applications
+       WHERE offer_id = $1 AND status IN ('approved', 'in_progress', 'completed')`,
+      [offerId]
+    );
+    return Number(r.rows[0]?.c ?? 0);
+  }
+
+  /** Есть ли свободное место; лимит «без ограничения» — значение 999 в БД. */
+  async offerHasFreeSlot(offerId: string): Promise<boolean> {
+    const r = await this.query(`SELECT max_participants FROM offers WHERE id = $1`, [offerId]);
+    const max = r.rows[0]?.max_participants;
+    if (max == null) return true;
+    if (Number(max) === MAX_PARTICIPANTS_UNLIMITED) return true;
+    const cnt = await this.getOccupiedSlotsCount(offerId);
+    return cnt < Number(max);
   }
 
   // Получить заказчика по ID
@@ -206,7 +253,7 @@ export class DatabaseService {
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
-        (o.max_participants - o.current_participants) as available_slots
+        ${AVAILABLE_SLOTS_EXPR} as available_slots
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
       LEFT JOIN users u ON e.user_id = u.id
@@ -426,7 +473,7 @@ export class DatabaseService {
         e.company as employer_company,
         i.url as image_url,
         i.alt_text as image_alt_text,
-        (o.max_participants - o.current_participants) as available_slots,
+        ${AVAILABLE_SLOTS_EXPR} as available_slots,
         NOT (
           EXISTS (SELECT 1 FROM offer_reports r WHERE r.offer_id = o.id)
           OR EXISTS (
@@ -565,8 +612,8 @@ export class DatabaseService {
     values.push(offerId);
     const query = `UPDATE offers SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`;
     const result = await this.query(query, values);
-    const row = result.rows[0] || null;
-    return row ? { ...row, tags: normalizeTags(row.tags) } : null;
+    if (result.rows.length === 0) return null;
+    return this.getOfferById(offerId);
   }
 
   // Проверить, что оффер принадлежит employer_id
@@ -598,18 +645,35 @@ export class DatabaseService {
         r.checklist_schema_version,
         r.checklist_schema_snapshot,
         r.photos,
-        RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix
+        RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
+        u_ex.name AS executor_name,
+        u_ex.surname AS executor_surname
       FROM offer_reports r
       JOIN offers o ON o.id = r.offer_id
       JOIN offer_applications oa ON oa.id = r.application_id
+      JOIN users u_ex ON u_ex.id = r.user_id
       WHERE r.offer_id = $1 AND o.employer_id = $2
       ORDER BY ${orderSql}
     `;
     const result = await this.query(query, [offerId, employerId]);
-    return result.rows.map((row: { executor_suffix: string }) => ({
-      ...row,
-      executor_label: `Исполнитель …${row.executor_suffix}`
-    }));
+    return result.rows.map(
+      (row: {
+        executor_suffix: string;
+        executor_name?: string;
+        executor_surname?: string;
+        [key: string]: unknown;
+      }) => {
+        const { executor_name, executor_surname, executor_suffix, ...rest } = row;
+        return {
+          ...rest,
+          executor_label: formatExecutorMaskLabel(
+            String(executor_suffix ?? ''),
+            executor_name,
+            executor_surname
+          )
+        };
+      }
+    );
   }
 
   async getEmployerOfferReportById(
@@ -629,19 +693,129 @@ export class DatabaseService {
         r.checklist_schema_version,
         r.checklist_schema_snapshot,
         r.photos,
-        RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix
+        RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
+        u_ex.name AS executor_name,
+        u_ex.surname AS executor_surname
       FROM offer_reports r
       JOIN offers o ON o.id = r.offer_id
       JOIN offer_applications oa ON oa.id = r.application_id
+      JOIN users u_ex ON u_ex.id = r.user_id
       WHERE r.id = $1 AND r.offer_id = $2 AND o.employer_id = $3
     `;
     const result = await this.query(query, [reportId, offerId, employerId]);
     const row = result.rows[0];
     if (!row) return null;
-    return {
-      ...row,
-      executor_label: `Исполнитель …${row.executor_suffix}`
+    const {
+      executor_name,
+      executor_surname,
+      executor_suffix,
+      ...rest
+    } = row as {
+      executor_name?: string;
+      executor_surname?: string;
+      executor_suffix: string;
+      [key: string]: unknown;
     };
+    return {
+      ...rest,
+      executor_label: formatExecutorMaskLabel(String(executor_suffix ?? ''), executor_name, executor_surname)
+    };
+  }
+
+  /** Собственный отчёт исполнителя по задаче (один на заявку) */
+  async getExecutorOwnReport(userId: string, offerId: string): Promise<any | null> {
+    const query = `
+      SELECT
+        r.id,
+        r.submitted_at,
+        oa.completed_at AS task_completed_at,
+        r.rating,
+        r.comments,
+        r.feedback,
+        r.checklist_answers,
+        r.checklist_schema_version,
+        r.checklist_schema_snapshot,
+        r.photos
+      FROM offer_reports r
+      JOIN offer_applications oa ON oa.id = r.application_id
+      WHERE r.offer_id = $1 AND r.user_id = $2
+      LIMIT 1
+    `;
+    const result = await this.query(query, [offerId, userId]);
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * Досрочное закрытие задачи заказчиком: деактивация оффера (is_active = false),
+   * заявки в pending → cancelled с пояснением. Идемпотентно, если задача уже неактивна.
+   */
+  async closeOfferEarlyForEmployer(
+    offerId: string,
+    employerId: string
+  ): Promise<
+    | { status: 'ok'; offer: any }
+    | { status: 'already_closed'; offer: any }
+    | { status: 'not_found' }
+    | { status: 'already_ended' }
+  > {
+    const pendingCancelReason = 'Задача закрыта заказчиком.';
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const sel = await client.query(
+        `SELECT id, employer_id, is_active, end_date FROM offers WHERE id = $1 FOR UPDATE`,
+        [offerId]
+      );
+      if (sel.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { status: 'not_found' };
+      }
+      const row = sel.rows[0] as {
+        employer_id: string;
+        is_active: boolean;
+        end_date: Date;
+      };
+      if (row.employer_id !== employerId) {
+        await client.query('ROLLBACK');
+        return { status: 'not_found' };
+      }
+      if (!row.is_active) {
+        await client.query('ROLLBACK');
+        const offer = await this.getOfferById(offerId);
+        return { status: 'already_closed', offer: offer ?? null };
+      }
+      const end = row.end_date instanceof Date ? row.end_date : new Date(row.end_date);
+      if (end < new Date()) {
+        await client.query('ROLLBACK');
+        return { status: 'already_ended' };
+      }
+
+      await client.query(
+        `UPDATE offer_applications
+         SET status = 'cancelled',
+             application_text = CASE
+               WHEN application_text IS NOT NULL AND TRIM(application_text) <> ''
+               THEN application_text || E'\n' || $2
+               ELSE $2
+             END
+         WHERE offer_id = $1 AND status = 'pending'`,
+        [offerId, pendingCancelReason]
+      );
+
+      await client.query(
+        `UPDATE offers SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+        [offerId]
+      );
+
+      await client.query('COMMIT');
+      const offer = await this.getOfferById(offerId);
+      return { status: 'ok', offer: offer ?? null };
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   // Удалить оффер (или мягкое удаление — is_active = false)

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ApiResponse, Banner, Offer, Image, Author } from '../types';
 import { dbService } from '../services/databaseService';
+import { AuthenticatedRequest } from '../middleware/userIdValidator';
 
 
 export const getBanner = async (req: Request, res: Response): Promise<void> => {
@@ -70,7 +71,7 @@ export const getOffers = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const getOfferById = async (req: Request, res: Response): Promise<void> => {
+export const getOfferById = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -100,9 +101,19 @@ export const getOfferById = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    let data: Record<string, unknown> = offer;
+    const userId = req.userId;
+    if (userId) {
+      const employerId = await dbService.getEmployerIdByUserId(userId);
+      if (employerId && employerId === offer.employer_id) {
+        const executors_active = await dbService.getOfferActiveExecutors(id);
+        data = { ...offer, executors_active };
+      }
+    }
+
     const response: ApiResponse<Offer> = {
       success: true,
-      data: offer
+      data: data as unknown as Offer
     };
     
     res.json(response);
@@ -194,7 +205,7 @@ export const getPromoOffers = async (req: Request, res: Response): Promise<void>
 export const getImageById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    
+
     if (!id) {
       const response: ApiResponse = {
         success: false,
@@ -208,7 +219,7 @@ export const getImageById = async (req: Request, res: Response): Promise<void> =
     }
 
     const image = await dbService.getImageById(id);
-    
+
     if (!image) {
       const response: ApiResponse = {
         success: false,
@@ -221,11 +232,33 @@ export const getImageById = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    const wantJson = req.query.format === 'json';
+
+    const reportFile = image.report_file as Buffer | undefined;
+    const hasBinary =
+      reportFile &&
+      (Buffer.isBuffer(reportFile) ? reportFile.length > 0 : Boolean(reportFile));
+
+    if (!wantJson && hasBinary) {
+      const mime = (image.mime_type as string) || 'application/octet-stream';
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.status(200).send(Buffer.isBuffer(reportFile) ? reportFile : Buffer.from(reportFile as Uint8Array));
+      return;
+    }
+
+    const externalUrl = typeof image.url === 'string' ? image.url.trim() : '';
+    if (!wantJson && externalUrl && /^https?:\/\//i.test(externalUrl)) {
+      res.redirect(302, externalUrl);
+      return;
+    }
+
+    const { report_file: _rf, ...meta } = image as Record<string, unknown>;
     const response: ApiResponse<Image> = {
       success: true,
-      data: image
+      data: meta as unknown as Image
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Error fetching image:', error);
