@@ -1,6 +1,8 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { Request, Response, NextFunction } from 'express';
+import * as typeIs from 'type-is';
 
 // Вариант 1: Сохранение на диск (текущий вариант)
 // Создаем папку для загрузки файлов, если её нет
@@ -62,4 +64,20 @@ export const uploadReportPhotos = uploadPhotosDisk.array('photos', 10);
 
 // Middleware для обработки нескольких файлов с полем 'photos' (в память для БД)
 export const uploadReportPhotosToMemory = uploadPhotosMemory.array('photos', 10);
+
+/**
+ * У `type-is` hasBody(req) бывает false без Content-Length и Transfer-Encoding (часть прокси).
+ * Тогда multer не парсит multipart, req.body пустой → VALIDATION_ERROR по application_id и т.д.
+ * Для multipart помечаем запрос как имеющий тело, чтобы multer запустил busboy.
+ */
+export function prepareMultipartReportRequest(req: Request, res: Response, next: NextFunction): void {
+  const ct = req.headers['content-type'];
+  if (!ct || !ct.toLowerCase().includes('multipart/form-data')) {
+    return next();
+  }
+  if (!typeIs.hasBody(req)) {
+    req.headers['transfer-encoding'] = 'chunked';
+  }
+  next();
+}
 

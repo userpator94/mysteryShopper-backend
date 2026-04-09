@@ -5,6 +5,15 @@ import { reportService } from '../services/reportService';
 import { dbService } from '../services/databaseService';
 import fs from 'fs';
 
+/** Текстовые поля multipart (в т.ч. дубликаты имён → массив). */
+function multipartTextField(v: unknown): string {
+  if (v === undefined || v === null) return '';
+  if (Array.isArray(v)) return multipartTextField(v[0]);
+  if (typeof v === 'string') return v.trim();
+  if (Buffer.isBuffer(v)) return v.toString('utf8').trim();
+  return String(v).trim();
+}
+
 export const createReport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     let bodyData: any = {};
@@ -59,7 +68,9 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
       }
     }
 
-    const { application_id, offer_id, user_id } = bodyData;
+    const application_id = multipartTextField(bodyData.application_id);
+    const offer_id = multipartTextField(bodyData.offer_id);
+    const user_id = multipartTextField(bodyData.user_id);
     const jwtUserId = req.userId;
 
     if (!application_id || !offer_id || !user_id) {

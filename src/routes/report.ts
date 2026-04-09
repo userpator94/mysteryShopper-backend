@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { createReport } from '../controllers/reportController';
 import { authenticateJWT } from '../middleware/authMiddleware';
-import { uploadReportPhotosToMemory } from '../middleware/uploadMiddleware';
+import { prepareMultipartReportRequest, uploadReportPhotosToMemory } from '../middleware/uploadMiddleware';
 import { ApiErrorResponse } from '../types';
 import multer from 'multer';
 
@@ -56,6 +56,7 @@ const handleMulterError = (err: any, req: Request, res: Response, next: NextFunc
 // Поля: application_id, offer_id, user_id, rating, feedback (JSON string), photos (массив файлов)
 router.post(
   '/',
+  prepareMultipartReportRequest,
   uploadReportPhotosToMemory, // Используем memory storage для сохранения в БД
   handleMulterError,
   createReport
