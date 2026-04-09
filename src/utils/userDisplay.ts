@@ -1,3 +1,13 @@
+/** Маска ФИО для заказчика: «И. П.» (первые буквы имён через точку). */
+export function formatExecutorDottedInitials(name: unknown, surname: unknown): string {
+  const n = String(name ?? '').trim();
+  const s = String(surname ?? '').trim();
+  const a = n.length ? `${n.charAt(0).toUpperCase()}.` : '';
+  const b = s.length ? `${s.charAt(0).toUpperCase()}.` : '';
+  if (a && b) return `${a} ${b}`;
+  return a || b || '—';
+}
+
 /** Инициалы из имени и фамилии (например для заказчика, без email). */
 export function userInitials(name: unknown, surname: unknown): string {
   const n = String(name ?? '').trim();

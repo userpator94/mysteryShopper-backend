@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
 import { MAX_PARTICIPANTS_UNLIMITED } from '../config/offerLimits';
-import { userInitials, formatExecutorMaskLabel } from '../utils/userDisplay';
+import { userInitials, formatExecutorMaskLabel, formatExecutorDottedInitials } from '../utils/userDisplay';
 
 /** Свободные места; при «без лимита» (999) — NULL. */
 const AVAILABLE_SLOTS_EXPR = `(CASE WHEN o.max_participants = ${MAX_PARTICIPANTS_UNLIMITED} THEN NULL ELSE (o.max_participants - o.current_participants) END)`;
@@ -158,10 +158,30 @@ export class DatabaseService {
   }
 
   /**
-   * Исполнители, принятые по задаче (approved / in_progress) — «в работе» до завершения отчёта.
-   * Для карточки заказчика: id + инициалы.
+   * Заявки в статусе pending — «ожидают одобрения».
    */
-  async getOfferActiveExecutors(
+  async getOfferPendingExecutors(
+    offerId: string
+  ): Promise<Array<{ user_id: string; initials: string }>> {
+    const q = `
+      SELECT oa.user_id, u.name, u.surname
+      FROM offer_applications oa
+      JOIN users u ON u.id = oa.user_id
+      WHERE oa.offer_id = $1
+        AND oa.status = 'pending'
+      ORDER BY oa.applied_at ASC
+    `;
+    const r = await this.query(q, [offerId]);
+    return (r.rows as Array<{ user_id: string; name: string; surname: string }>).map((row) => ({
+      user_id: row.user_id,
+      initials: userInitials(row.name, row.surname)
+    }));
+  }
+
+  /**
+   * Принятые по задаче (approved / in_progress), по которым ещё нет отчёта — «в работе».
+   */
+  async getOfferInWorkExecutors(
     offerId: string
   ): Promise<Array<{ user_id: string; initials: string }>> {
     const q = `
@@ -170,6 +190,7 @@ export class DatabaseService {
       JOIN users u ON u.id = oa.user_id
       WHERE oa.offer_id = $1
         AND oa.status IN ('approved', 'in_progress')
+        AND NOT EXISTS (SELECT 1 FROM offer_reports r WHERE r.application_id = oa.id)
       ORDER BY oa.approved_at NULLS LAST, oa.applied_at ASC
     `;
     const r = await this.query(q, [offerId]);
@@ -177,6 +198,155 @@ export class DatabaseService {
       user_id: row.user_id,
       initials: userInitials(row.name, row.surname)
     }));
+  }
+
+  /**
+   * Исполнители, по которым уже есть отправленный отчёт по задаче (для кабинета заказчика).
+   */
+  async getOfferExecutorsWhoReported(
+    offerId: string
+  ): Promise<Array<{ user_id: string; initials: string }>> {
+    const q = `
+      SELECT r.user_id, u.name, u.surname
+      FROM offer_reports r
+      JOIN users u ON u.id = r.user_id
+      WHERE r.offer_id = $1
+      GROUP BY r.user_id, u.name, u.surname
+      ORDER BY MAX(r.submitted_at) DESC
+    `;
+    const r = await this.query(q, [offerId]);
+    return (r.rows as Array<{ user_id: string; name: string; surname: string }>).map((row) => ({
+      user_id: row.user_id,
+      initials: userInitials(row.name, row.surname)
+    }));
+  }
+
+  /**
+   * Публичный профиль исполнителя для заказчика (без PII), только если оффер принадлежит employer
+   * и есть связь заявки/отчёта по этой задаче с исполнителем.
+   */
+  async getEmployerExecutorProfile(
+    employerId: string,
+    offerId: string,
+    executorUserId: string
+  ): Promise<{
+    user_id: string;
+    masked_name: string;
+    executor_label: string;
+    avatar_url: string | null;
+    registered_at: string;
+    executor_timezone: string | null;
+    stats: {
+      active_tasks_without_report: number;
+      completed_tasks_with_report: number;
+      executor_self_cancellations: number;
+    };
+    worked_with_this_employer: boolean;
+  } | null> {
+    const own = await this.query(
+      `SELECT 1 FROM offers o WHERE o.id = $1 AND o.employer_id = $2`,
+      [offerId, employerId]
+    );
+    if (!own.rows.length) return null;
+
+    const link = await this.query(
+      `SELECT 1 FROM offer_applications oa WHERE oa.offer_id = $1 AND oa.user_id = $2
+       UNION
+       SELECT 1 FROM offer_reports r WHERE r.offer_id = $1 AND r.user_id = $2`,
+      [offerId, executorUserId]
+    );
+    if (!link.rows.length) return null;
+
+    const userRes = await this.query(
+      `SELECT u.id, u.name, u.surname, u.role, u.created_at,
+              i.url AS avatar_url
+       FROM users u
+       LEFT JOIN images i ON i.is_active = TRUE
+         AND u.avatar_id IS NOT NULL
+         AND TRIM(u.avatar_id) <> ''
+         AND i.id::text = TRIM(u.avatar_id)
+       WHERE u.id = $1 AND u.is_active = TRUE`,
+      [executorUserId]
+    );
+    if (!userRes.rows.length) return null;
+    const row = userRes.rows[0] as {
+      id: string;
+      name: string;
+      surname: string;
+      role: string;
+      created_at: string;
+      avatar_url: string | null;
+    };
+    if (row.role !== 'user') return null;
+
+    const suffixRes = await this.query(
+      `SELECT RIGHT(REPLACE($1::text, '-', ''), 4) AS suf`,
+      [executorUserId]
+    );
+    const suf = String(suffixRes.rows[0]?.suf ?? '').trim();
+
+    const masked_name = formatExecutorDottedInitials(row.name, row.surname);
+    const executor_label = formatExecutorMaskLabel(suf, row.name, row.surname);
+
+    const [
+      activeR,
+      completedR,
+      cancelR,
+      workedR
+    ] = await Promise.all([
+      this.query(
+        `SELECT COUNT(*)::int AS c FROM offer_applications oa
+         WHERE oa.user_id = $1
+           AND oa.status IN ('approved', 'in_progress')
+           AND NOT EXISTS (SELECT 1 FROM offer_reports r WHERE r.application_id = oa.id)`,
+        [executorUserId]
+      ),
+      this.query(
+        `SELECT COUNT(DISTINCT r.offer_id)::int AS c FROM offer_reports r WHERE r.user_id = $1`,
+        [executorUserId]
+      ),
+      this.query(
+        `SELECT COUNT(DISTINCT oa.offer_id)::int AS c FROM offer_applications oa
+         WHERE oa.user_id = $1
+           AND oa.status = 'cancelled'
+           AND (
+             oa.application_text IS NULL
+             OR oa.application_text NOT LIKE '%Задача закрыта заказчиком.%'
+           )`,
+        [executorUserId]
+      ),
+      this.query(
+        `SELECT EXISTS (
+           SELECT 1 FROM offer_reports r
+           INNER JOIN offers o ON o.id = r.offer_id
+           WHERE r.user_id = $1 AND o.employer_id = $2
+         ) AS e`,
+        [executorUserId, employerId]
+      )
+    ]);
+
+    const createdRaw = row.created_at as Date | string | null;
+    const registered_at =
+      createdRaw instanceof Date
+        ? createdRaw.toISOString()
+        : createdRaw != null
+          ? String(createdRaw)
+          : '';
+
+    return {
+      user_id: row.id,
+      masked_name,
+      executor_label,
+      avatar_url: row.avatar_url ?? null,
+      registered_at,
+      executor_timezone: null,
+      stats: {
+        active_tasks_without_report: Number(activeR.rows[0]?.c ?? 0),
+        completed_tasks_with_report: Number(completedR.rows[0]?.c ?? 0),
+        executor_self_cancellations: Number(cancelR.rows[0]?.c ?? 0)
+      },
+      worked_with_this_employer: Boolean(workedR.rows[0]?.e)
+    };
   }
 
   /** Число занятых мест (по тем же статусам, что и current_participants на оффере). */
@@ -636,6 +806,7 @@ export class DatabaseService {
     const query = `
       SELECT
         r.id,
+        r.user_id AS executor_user_id,
         r.submitted_at,
         oa.completed_at AS task_completed_at,
         r.rating,
@@ -684,6 +855,7 @@ export class DatabaseService {
     const query = `
       SELECT
         r.id,
+        r.user_id AS executor_user_id,
         r.submitted_at,
         oa.completed_at AS task_completed_at,
         r.rating,

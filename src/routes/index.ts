@@ -54,6 +54,9 @@ router.get('/protected', (req: Request, res: Response) => {
   });
 });
 
+// Заказчик / отчёты / my-report — важно раньше homepage: там же GET /offers/:id (карточка задания).
+router.use('/', offersRoutes);
+
 // Direct routes (without homepage prefix)
 router.use('/', homepageRoutes);
 
@@ -65,9 +68,6 @@ router.use('/user/stats', userStatisticsRoutes);
 
 // Authentication routes
 router.use('/', authRoutes);
-
-// Offers CRUD для заказчика (POST /offers, GET /my/offers, PATCH/DELETE /offers/:id)
-router.use('/', offersRoutes);
 
 // Apply routes
 router.use('/apply', applyRoutes);

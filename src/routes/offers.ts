@@ -6,6 +6,7 @@ import {
   getOfferReportById,
   downloadOfferReportPdf
 } from '../controllers/employerReportsController';
+import { getEmployerExecutorProfile } from '../controllers/employerExecutorProfileController';
 import { getMyOfferReport } from '../controllers/executorReportsController';
 import { authenticateJWT, requireEmployer } from '../middleware/authMiddleware';
 
@@ -29,6 +30,12 @@ router.get(
   authenticateJWT,
   requireEmployer,
   getOfferReportById
+);
+router.get(
+  '/offers/:offerId/executors/:executorUserId/profile',
+  authenticateJWT,
+  requireEmployer,
+  getEmployerExecutorProfile
 );
 router.get('/offers/:offerId/reports', authenticateJWT, requireEmployer, getOfferReports);
 

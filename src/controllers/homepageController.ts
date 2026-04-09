@@ -106,8 +106,12 @@ export const getOfferById = async (req: AuthenticatedRequest, res: Response): Pr
     if (userId) {
       const employerId = await dbService.getEmployerIdByUserId(userId);
       if (employerId && employerId === offer.employer_id) {
-        const executors_active = await dbService.getOfferActiveExecutors(id);
-        data = { ...offer, executors_active };
+        const [executors_pending, executors_in_work, executors_reported] = await Promise.all([
+          dbService.getOfferPendingExecutors(id),
+          dbService.getOfferInWorkExecutors(id),
+          dbService.getOfferExecutorsWhoReported(id)
+        ]);
+        data = { ...offer, executors_pending, executors_in_work, executors_reported };
       }
     }
 
