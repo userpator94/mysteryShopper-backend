@@ -23,20 +23,20 @@ export const errorHandler = (
   console.error(`   URL: ${req.method} ${req.url}`);
   console.error(`   IP: ${req.ip}`);
   console.error(`   User Agent: ${req.get('User-Agent')}`);
-  console.error(`   Stack Trace:`, err.stack);
+  console.error('   Stack Trace:', err.stack);
   
   // Логирование тела запроса для POST/PUT запросов
   if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
-    console.error(`   Request Body:`, JSON.stringify(req.body, null, 2));
+    console.error('   Request Body:', JSON.stringify(req.body, null, 2));
   }
 
   // Логирование параметров запроса
   if (Object.keys(req.params).length > 0) {
-    console.error(`   Params:`, req.params);
+    console.error('   Params:', req.params);
   }
   
   if (Object.keys(req.query).length > 0) {
-    console.error(`   Query:`, req.query);
+    console.error('   Query:', req.query);
   }
 
   res.status(statusCode).json({

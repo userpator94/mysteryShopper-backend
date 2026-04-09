@@ -124,7 +124,7 @@ export class FavoritesService {
       
       return { added: true, message: 'Добавлено в избранное' };
     } catch (error: any) {
-      console.error(`❌ Error in addToFavorites:`, error);
+      console.error('❌ Error in addToFavorites:', error);
       throw error;
     }
   }

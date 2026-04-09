@@ -4,15 +4,7 @@ import { ApiErrorResponse, ReportResponse } from '../types';
 import { reportService } from '../services/reportService';
 import { dbService } from '../services/databaseService';
 import fs from 'fs';
-
-/** Текстовые поля multipart (в т.ч. дубликаты имён → массив). */
-function multipartTextField(v: unknown): string {
-  if (v === undefined || v === null) return '';
-  if (Array.isArray(v)) return multipartTextField(v[0]);
-  if (typeof v === 'string') return v.trim();
-  if (Buffer.isBuffer(v)) return v.toString('utf8').trim();
-  return String(v).trim();
-}
+import { multipartTextField } from '../utils/multipartBodyFields';
 
 export const createReport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {

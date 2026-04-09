@@ -44,16 +44,16 @@ export class AuthService {
       const unit = match[2];
       
       switch (unit) {
-        case 's':
-          return value;
-        case 'm':
-          return value * 60;
-        case 'h':
-          return value * 3600;
-        case 'd':
-          return value * 86400;
-        default:
-          return 3600; // По умолчанию 1 час
+      case 's':
+        return value;
+      case 'm':
+        return value * 60;
+      case 'h':
+        return value * 3600;
+      case 'd':
+        return value * 86400;
+      default:
+        return 3600; // По умолчанию 1 час
       }
     }
 

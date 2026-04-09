@@ -17,7 +17,7 @@ function createVfsAdapter(): {
   existsSync: (name: string) => boolean;
   readFileSync: (name: string, options?: BufferEncoding | { encoding?: BufferEncoding }) => Buffer | string;
   writeFileSync: (name: string, content: string | Buffer) => void;
-} {
+  } {
   const storage: Record<string, string> = { ...vfsFontsRaw };
   return {
     existsSync(name: string) {

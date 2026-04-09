@@ -43,7 +43,7 @@ const urlencodedBodyParser = express.urlencoded({ extended: true, limit: '10mb' 
 function isPostReportMultipartRoute(req: express.Request): boolean {
   if (req.method !== 'POST') return false;
   const pathOnly = req.originalUrl.split('?')[0].replace(/\/$/, '') || '/';
-  return pathOnly === '/api/report';
+  return pathOnly === '/api/report' || pathOnly.endsWith('/api/report');
 }
 
 app.use((req, res, next) => {

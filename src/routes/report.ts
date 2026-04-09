@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { createReport } from '../controllers/reportController';
 import { authenticateJWT } from '../middleware/authMiddleware';
-import { prepareMultipartReportRequest, uploadReportPhotosToMemory } from '../middleware/uploadMiddleware';
+import { parseReportMultipart } from '../middleware/reportMultipartParser';
 import { ApiErrorResponse } from '../types';
 import multer from 'multer';
 
@@ -35,6 +35,23 @@ const handleMulterError = (err: any, req: Request, res: Response, next: NextFunc
   }
   
   if (err) {
+    if (err.message === 'BODY_TOO_LARGE') {
+      res.status(413).json({
+        success: false,
+        error: { code: 'FILE_UPLOAD_ERROR', message: 'Размер запроса превышает лимит' }
+      } as ApiErrorResponse);
+      return;
+    }
+    if (err.message === 'MULTIPART_BOUNDARY_MISSING') {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Некорректный multipart-запрос (нет boundary). Проверьте прокси и Content-Type.'
+        }
+      } as ApiErrorResponse);
+      return;
+    }
     const response: ApiErrorResponse = {
       success: false,
       error: {
@@ -56,8 +73,7 @@ const handleMulterError = (err: any, req: Request, res: Response, next: NextFunc
 // Поля: application_id, offer_id, user_id, rating, feedback (JSON string), photos (массив файлов)
 router.post(
   '/',
-  prepareMultipartReportRequest,
-  uploadReportPhotosToMemory, // Используем memory storage для сохранения в БД
+  parseReportMultipart,
   handleMulterError,
   createReport
 );

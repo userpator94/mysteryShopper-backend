@@ -244,7 +244,7 @@ export class DatabaseService {
     worked_with_this_employer: boolean;
   } | null> {
     const own = await this.query(
-      `SELECT 1 FROM offers o WHERE o.id = $1 AND o.employer_id = $2`,
+      'SELECT 1 FROM offers o WHERE o.id = $1 AND o.employer_id = $2',
       [offerId, employerId]
     );
     if (!own.rows.length) return null;
@@ -280,7 +280,7 @@ export class DatabaseService {
     if (row.role !== 'user') return null;
 
     const suffixRes = await this.query(
-      `SELECT RIGHT(REPLACE($1::text, '-', ''), 4) AS suf`,
+      'SELECT RIGHT(REPLACE($1::text, \'-\', \'\'), 4) AS suf',
       [executorUserId]
     );
     const suf = String(suffixRes.rows[0]?.suf ?? '').trim();
@@ -302,7 +302,7 @@ export class DatabaseService {
         [executorUserId]
       ),
       this.query(
-        `SELECT COUNT(DISTINCT r.offer_id)::int AS c FROM offer_reports r WHERE r.user_id = $1`,
+        'SELECT COUNT(DISTINCT r.offer_id)::int AS c FROM offer_reports r WHERE r.user_id = $1',
         [executorUserId]
       ),
       this.query(
@@ -361,7 +361,7 @@ export class DatabaseService {
 
   /** Есть ли свободное место; лимит «без ограничения» — значение 999 в БД. */
   async offerHasFreeSlot(offerId: string): Promise<boolean> {
-    const r = await this.query(`SELECT max_participants FROM offers WHERE id = $1`, [offerId]);
+    const r = await this.query('SELECT max_participants FROM offers WHERE id = $1', [offerId]);
     const max = r.rows[0]?.max_participants;
     if (max == null) return true;
     if (Number(max) === MAX_PARTICIPANTS_UNLIMITED) return true;
@@ -453,7 +453,7 @@ export class DatabaseService {
                    AND e.is_active = TRUE`;
     }
 
-    query += ` ORDER BY o.created_at DESC`;
+    query += ' ORDER BY o.created_at DESC';
 
     const result = await this.query(query, params);
     return result.rows.map((row: { tags?: unknown }) => ({ ...row, tags: normalizeTags(row.tags) }));
@@ -533,7 +533,7 @@ export class DatabaseService {
 
   // Получить пользователя по id (для проверки роли по БД, не по JWT)
   async getUserById(userId: string): Promise<{ id: string; role: string; is_active: boolean } | null> {
-    const query = `SELECT id, role, is_active FROM users WHERE id = $1`;
+    const query = 'SELECT id, role, is_active FROM users WHERE id = $1';
     const result = await this.query(query, [userId]);
     return result.rows[0] || null;
   }
@@ -614,7 +614,7 @@ export class DatabaseService {
 
   // Получить employer по user_id (связь: employers.user_id → users.id)
   async getEmployerByUserId(userId: string): Promise<any | null> {
-    const query = `SELECT * FROM employers WHERE user_id = $1 AND is_active = TRUE`;
+    const query = 'SELECT * FROM employers WHERE user_id = $1 AND is_active = TRUE';
     const result = await this.query(query, [userId]);
     return result.rows[0] || null;
   }
@@ -631,7 +631,7 @@ export class DatabaseService {
     const limit = Math.min(100, Math.max(1, options?.limit ?? 20));
     const offset = (page - 1) * limit;
 
-    const countQuery = `SELECT COUNT(*)::int FROM offers WHERE employer_id = $1`;
+    const countQuery = 'SELECT COUNT(*)::int FROM offers WHERE employer_id = $1';
     const countResult = await this.query(countQuery, [employerId]);
     const total = countResult.rows[0]?.count ?? 0;
 
@@ -788,7 +788,7 @@ export class DatabaseService {
 
   // Проверить, что оффер принадлежит employer_id
   async isOfferOwnedByEmployer(offerId: string, employerId: string): Promise<boolean> {
-    const query = `SELECT id FROM offers WHERE id = $1 AND employer_id = $2`;
+    const query = 'SELECT id FROM offers WHERE id = $1 AND employer_id = $2';
     const result = await this.query(query, [offerId, employerId]);
     return result.rows.length > 0;
   }
@@ -935,7 +935,7 @@ export class DatabaseService {
     try {
       await client.query('BEGIN');
       const sel = await client.query(
-        `SELECT id, employer_id, is_active, end_date FROM offers WHERE id = $1 FOR UPDATE`,
+        'SELECT id, employer_id, is_active, end_date FROM offers WHERE id = $1 FOR UPDATE',
         [offerId]
       );
       if (sel.rows.length === 0) {
@@ -975,7 +975,7 @@ export class DatabaseService {
       );
 
       await client.query(
-        `UPDATE offers SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+        'UPDATE offers SET is_active = FALSE, updated_at = NOW() WHERE id = $1',
         [offerId]
       );
 

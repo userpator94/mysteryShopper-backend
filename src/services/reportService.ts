@@ -136,7 +136,7 @@ export class ReportService {
 
       const dup = await this.queryWithClient(
         client,
-        `SELECT id FROM offer_reports WHERE application_id = $1 LIMIT 1`,
+        'SELECT id FROM offer_reports WHERE application_id = $1 LIMIT 1',
         [params.applicationId]
       );
       if (dup.rows.length > 0) {
@@ -165,7 +165,7 @@ export class ReportService {
 
       const offerRes = await this.queryWithClient(
         client,
-        `SELECT employer_id, checklist_schema, schema_version FROM offers WHERE id = $1`,
+        'SELECT employer_id, checklist_schema, schema_version FROM offers WHERE id = $1',
         [params.offerId]
       );
       if (offerRes.rows.length === 0) {
@@ -207,7 +207,7 @@ export class ReportService {
           params.photoFiles.length
         );
 
-        let mergedAnswers: Record<string, unknown> = { ...(v.answers as Record<string, unknown>) };
+        const mergedAnswers: Record<string, unknown> = { ...(v.answers as Record<string, unknown>) };
         for (let i = 0; i < params.photoFiles.length; i++) {
           const file = params.photoFiles[i];
           const itemId = photoItemIds[i];

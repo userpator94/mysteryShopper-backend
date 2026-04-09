@@ -107,53 +107,53 @@ export function validateAnswersAgainstSchema(
       continue;
     }
     switch (item.type) {
-      case 'boolean': {
-        if (typeof v !== 'boolean') {
-          return { ok: false, message: `Ожидается да/нет: ${item.label}`, field: item.id };
-        }
-        out[item.id] = v;
-        break;
+    case 'boolean': {
+      if (typeof v !== 'boolean') {
+        return { ok: false, message: `Ожидается да/нет: ${item.label}`, field: item.id };
       }
-      case 'scale_1_5': {
-        const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? v : NaN;
-        if (!Number.isInteger(n) || n < 1 || n > 5) {
-          return { ok: false, message: `Шкала 1–5: ${item.label}`, field: item.id };
-        }
-        out[item.id] = n;
-        break;
+      out[item.id] = v;
+      break;
+    }
+    case 'scale_1_5': {
+      const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? v : NaN;
+      if (!Number.isInteger(n) || n < 1 || n > 5) {
+        return { ok: false, message: `Шкала 1–5: ${item.label}`, field: item.id };
       }
-      case 'text': {
-        const s = String(v);
-        if (s.length > CHECKLIST_TEXT_MAX_LENGTH) {
-          return { ok: false, message: `Текст слишком длинный: ${item.label}`, field: item.id };
-        }
-        out[item.id] = s;
-        break;
+      out[item.id] = n;
+      break;
+    }
+    case 'text': {
+      const s = String(v);
+      if (s.length > CHECKLIST_TEXT_MAX_LENGTH) {
+        return { ok: false, message: `Текст слишком длинный: ${item.label}`, field: item.id };
       }
-      case 'single_choice': {
-        const s = String(v);
-        if (!item.options?.includes(s)) {
-          return { ok: false, message: `Неверный вариант: ${item.label}`, field: item.id };
-        }
-        out[item.id] = s;
-        break;
+      out[item.id] = s;
+      break;
+    }
+    case 'single_choice': {
+      const s = String(v);
+      if (!item.options?.includes(s)) {
+        return { ok: false, message: `Неверный вариант: ${item.label}`, field: item.id };
       }
-      case 'photo_text': {
-        if (!isPlainObject(v)) {
-          return { ok: false, message: `Ожидается объект с полем explanation: ${item.label}`, field: item.id };
-        }
-        const expl = typeof v.explanation === 'string' ? v.explanation.trim() : '';
-        if (!expl) {
-          return { ok: false, message: `Заполните пояснение к фото: ${item.label}`, field: item.id };
-        }
-        if (expl.length > CHECKLIST_TEXT_MAX_LENGTH) {
-          return { ok: false, message: `Текст слишком длинный: ${item.label}`, field: item.id };
-        }
-        out[item.id] = { explanation: expl };
-        break;
+      out[item.id] = s;
+      break;
+    }
+    case 'photo_text': {
+      if (!isPlainObject(v)) {
+        return { ok: false, message: `Ожидается объект с полем explanation: ${item.label}`, field: item.id };
       }
-      default:
-        return { ok: false, message: 'Внутренняя ошибка типа вопроса' };
+      const expl = typeof v.explanation === 'string' ? v.explanation.trim() : '';
+      if (!expl) {
+        return { ok: false, message: `Заполните пояснение к фото: ${item.label}`, field: item.id };
+      }
+      if (expl.length > CHECKLIST_TEXT_MAX_LENGTH) {
+        return { ok: false, message: `Текст слишком длинный: ${item.label}`, field: item.id };
+      }
+      out[item.id] = { explanation: expl };
+      break;
+    }
+    default:
+      return { ok: false, message: 'Внутренняя ошибка типа вопроса' };
     }
   }
   for (const key of Object.keys(answers)) {
