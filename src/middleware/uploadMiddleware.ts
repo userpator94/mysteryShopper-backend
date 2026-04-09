@@ -2,7 +2,14 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Request, Response, NextFunction } from 'express';
-import * as typeIs from 'type-is';
+
+/** Как `type-is` hasBody: без этого multer не парсит multipart при «пустом» теле по заголовкам. */
+function requestHasBody(req: Request): boolean {
+  if (req.headers['transfer-encoding'] !== undefined) return true;
+  const raw = req.headers['content-length'];
+  const cl = Array.isArray(raw) ? raw[0] : raw;
+  return !Number.isNaN(Number(cl));
+}
 
 // Вариант 1: Сохранение на диск (текущий вариант)
 // Создаем папку для загрузки файлов, если её нет
@@ -75,7 +82,7 @@ export function prepareMultipartReportRequest(req: Request, res: Response, next:
   if (!ct || !ct.toLowerCase().includes('multipart/form-data')) {
     return next();
   }
-  if (!typeIs.hasBody(req)) {
+  if (!requestHasBody(req)) {
     req.headers['transfer-encoding'] = 'chunked';
   }
   next();
