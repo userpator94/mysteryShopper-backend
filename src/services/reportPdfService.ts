@@ -1,9 +1,16 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
+import path from 'path';
+import { createRequire } from 'module';
 import { dbService } from './databaseService';
 
-const PdfPrinter = require('pdfmake/js/Printer').default;
-const URLResolver = require('pdfmake/js/URLResolver').default;
-const vfsFontsRaw = require('pdfmake/build/vfs_fonts') as Record<string, string>;
+/** Абсолютные пути к файлам pdfmake — надёжнее, чем `require('pdfmake/js/Printer')` при деплое без полного дерева node_modules. */
+const requirePdf = createRequire(__dirname);
+const pdfmakeRoot = path.dirname(requirePdf.resolve('pdfmake/package.json'));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const PdfPrinter = requirePdf(path.join(pdfmakeRoot, 'js', 'Printer.js')).default as any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const URLResolver = requirePdf(path.join(pdfmakeRoot, 'js', 'URLResolver.js')).default as any;
+
+const vfsFontsRaw = requirePdf(path.join(pdfmakeRoot, 'build', 'vfs_fonts.js')) as Record<string, string>;
 
 /** pdfmake ожидает virtualfs с existsSync/readFileSync; сырой объект из vfs_fonts этим не обладает. */
 function createVfsAdapter(): {

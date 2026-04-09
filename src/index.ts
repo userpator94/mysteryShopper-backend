@@ -35,9 +35,25 @@ app.use(morgan('combined'));
 // Rate limiting
 app.use(rateLimiter);
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing: для POST /api/report не вызываем json/urlencoded — иначе при multipart
+// (или при неверном Content-Type от прокси) body-parser пытается JSON.parse тело с boundary WebKit → 400.
+const jsonBodyParser = express.json({ limit: '10mb' });
+const urlencodedBodyParser = express.urlencoded({ extended: true, limit: '10mb' });
+
+function isPostReportMultipartRoute(req: express.Request): boolean {
+  if (req.method !== 'POST') return false;
+  const pathOnly = req.originalUrl.split('?')[0].replace(/\/$/, '') || '/';
+  return pathOnly === '/api/report';
+}
+
+app.use((req, res, next) => {
+  if (isPostReportMultipartRoute(req)) return next();
+  return jsonBodyParser(req, res, next);
+});
+app.use((req, res, next) => {
+  if (isPostReportMultipartRoute(req)) return next();
+  return urlencodedBodyParser(req, res, next);
+});
 
 // Static files for uploaded photos
 app.use('/api/uploads', express.static(path.join(process.cwd(), 'uploads')));
