@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { getBanner, getOffers, getOfferById, getPromoOffers, getAuthorById, getImageById } from '../controllers/homepageController';
-import { authenticateJWT } from '../middleware/authMiddleware';
+import { authenticateJWT, authenticateJWTOptional } from '../middleware/authMiddleware';
 
 const router = Router();
 
 // Direct API routes (without homepage prefix)
 // Публичные эндпоинты (не требуют аутентификации)
 router.get('/banner', getBanner);
-router.get('/offers', getOffers); // Список предложений - публичный
+// Список предложений — публичный, но может учитывать userId если токен передан
+router.get('/offers', authenticateJWTOptional, getOffers);
 router.get('/promo-offers', getPromoOffers);
 router.get('/authors/:id', getAuthorById);
 router.get('/images/:id', getImageById);

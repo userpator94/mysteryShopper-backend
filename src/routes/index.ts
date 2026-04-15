@@ -9,6 +9,7 @@ import applyRoutes from './apply';
 import appliesRoutes from './applies';
 import applicationsRoutes from './applications';
 import reportRoutes from './report';
+import rewardsRoutes from './rewards';
 
 const router = Router();
 
@@ -80,6 +81,9 @@ router.use('/applications', applicationsRoutes);
 
 // Report routes
 router.use('/report', reportRoutes);
+
+// Rewards (executor)
+router.use('/', rewardsRoutes);
 
 export default router;
 

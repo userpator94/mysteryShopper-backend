@@ -3,8 +3,25 @@ import pool from '../config/database';
 import { MAX_PARTICIPANTS_UNLIMITED } from '../config/offerLimits';
 import { userInitials, formatExecutorMaskLabel, formatExecutorDottedInitials } from '../utils/userDisplay';
 
+/**
+ * Число занятых мест считаем из offer_applications, чтобы не зависеть от поля offers.current_participants,
+ * которое может быть не синхронизировано (без триггеров/cron).
+ */
+const OCCUPIED_SLOTS_EXPR = `(
+  SELECT COUNT(*)::int
+  FROM offer_applications oa_cnt
+  WHERE oa_cnt.offer_id = o.id
+    AND oa_cnt.status IN ('approved', 'in_progress', 'completed')
+)`;
+
 /** Свободные места; при «без лимита» (999) — NULL. */
-const AVAILABLE_SLOTS_EXPR = `(CASE WHEN o.max_participants = ${MAX_PARTICIPANTS_UNLIMITED} THEN NULL ELSE (o.max_participants - o.current_participants) END)`;
+const AVAILABLE_SLOTS_EXPR = `(CASE
+  WHEN o.max_participants = ${MAX_PARTICIPANTS_UNLIMITED} THEN NULL
+  ELSE GREATEST(
+    0,
+    (COALESCE(NULLIF(o.max_participants, 0), 1) - ${OCCUPIED_SLOTS_EXPR})
+  )
+END)`;
 
 /** Очищает одну строку тега от кавычек и обратных слешей */
 function cleanTag(s: string): string {
@@ -59,6 +76,7 @@ export class DatabaseService {
     const query = `
       SELECT 
         o.*,
+        ${OCCUPIED_SLOTS_EXPR} as current_participants,
         u.name as employer_name,
         u.surname as employer_surname,
         e.company as employer_company,
@@ -73,6 +91,7 @@ export class DatabaseService {
         AND o.start_date <= NOW() 
         AND o.end_date >= NOW()
         AND e.is_active = TRUE
+        AND (${AVAILABLE_SLOTS_EXPR} IS NULL OR ${AVAILABLE_SLOTS_EXPR} > 0)
       ORDER BY o.created_at DESC
     `;
     
@@ -85,6 +104,7 @@ export class DatabaseService {
     const query = `
       SELECT 
         o.*,
+        ${OCCUPIED_SLOTS_EXPR} as current_participants,
         u.name as employer_name,
         u.surname as employer_surname,
         e.company as employer_company,
@@ -100,6 +120,7 @@ export class DatabaseService {
         AND o.start_date <= NOW() 
         AND o.end_date >= NOW()
         AND e.is_active = TRUE
+        AND (${AVAILABLE_SLOTS_EXPR} IS NULL OR ${AVAILABLE_SLOTS_EXPR} > 0)
       ORDER BY o.created_at DESC
     `;
     
@@ -131,6 +152,7 @@ export class DatabaseService {
     const query = `
       SELECT 
         o.*,
+        ${OCCUPIED_SLOTS_EXPR} as current_participants,
         u.name as employer_name,
         u.surname as employer_surname,
         e.company as employer_company,
@@ -414,10 +436,12 @@ export class DatabaseService {
     isPromo?: boolean;
     authorId?: string;
     active?: boolean;
+    viewerUserId?: string;
   }): Promise<any[]> {
     let query = `
       SELECT 
         o.*,
+        ${OCCUPIED_SLOTS_EXPR} as current_participants,
         u.name as employer_name,
         u.surname as employer_surname,
         e.company as employer_company,
@@ -447,10 +471,24 @@ export class DatabaseService {
     }
 
     if (filters.active !== false) {
+      // Для активной выдачи скрываем офферы без свободных мест,
+      // но если пользователь уже участвовал (есть заявка), показываем всё равно
+      const userId = filters.viewerUserId;
       query += ` AND o.is_active = TRUE 
                    AND o.start_date <= NOW() 
                    AND o.end_date >= NOW()
-                   AND e.is_active = TRUE`;
+                   AND e.is_active = TRUE
+                   AND (
+                     (${AVAILABLE_SLOTS_EXPR} IS NULL OR ${AVAILABLE_SLOTS_EXPR} > 0)
+                     ${userId ? ` OR EXISTS (
+                       SELECT 1 FROM offer_applications oa_me
+                       WHERE oa_me.offer_id = o.id AND oa_me.user_id = $${paramCount + 1}
+                     )` : ''}
+                   )`;
+      if (userId) {
+        paramCount++;
+        params.push(userId);
+      }
     }
 
     query += ' ORDER BY o.created_at DESC';
@@ -638,6 +676,7 @@ export class DatabaseService {
     const query = `
       SELECT 
         o.*,
+        ${OCCUPIED_SLOTS_EXPR} as current_participants,
         u.name as employer_name,
         u.surname as employer_surname,
         e.company as employer_company,

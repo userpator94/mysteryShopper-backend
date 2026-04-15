@@ -30,7 +30,19 @@ app.use(cors({
 app.use(compression());
 
 // Logging middleware
-app.use(morgan('combined'));
+app.use(
+  morgan((tokens, req, res) => {
+    const rt = Number(tokens['response-time'](req, res) || 0);
+    const line = [
+      tokens.method(req, res),
+      tokens.url(req, res),
+      tokens.status(req, res),
+      `${rt.toFixed(1)}ms`
+    ].join(' ');
+    // Подсветим медленные запросы в логах
+    return rt >= 500 ? `SLOW ${line}` : line;
+  })
+);
 
 // Rate limiting
 app.use(rateLimiter);

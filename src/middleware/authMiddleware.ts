@@ -115,6 +115,42 @@ export const authenticateJWT = (
 };
 
 /**
+ * Опциональная JWT-аутентификация.
+ * - Если токен не передан: пропускаем дальше (гость).
+ * - Если токен передан и валиден: заполняем req.userId/role и пропускаем дальше.
+ * - Если токен передан, но невалиден: игнорируем и пропускаем дальше (не 401),
+ *   чтобы публичные страницы не ломались из-за просроченного токена в клиенте.
+ */
+export const authenticateJWTOptional = (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      next();
+      return;
+    }
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      next();
+      return;
+    }
+    const token = parts[1];
+    try {
+      const decoded = authService.verifyToken(token) as JWTPayload;
+      if (decoded?.user_id) {
+        req.userId = decoded.user_id;
+        req.userEmail = decoded.email;
+        req.userRole = decoded.role || 'user';
+      }
+    } catch {
+      // ignore invalid/expired token for public endpoints
+    }
+    next();
+  } catch {
+    next();
+  }
+};
+
+/**
  * Middleware: доступ только для роли employer.
  * Роль берётся из JWT; расшифрованный JWT проверяется по таблице users (user_id и role должны совпадать с БД).
  * Затем связь с employers по user_id, employerId подставляется в request.

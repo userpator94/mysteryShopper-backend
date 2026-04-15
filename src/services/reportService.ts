@@ -5,6 +5,7 @@ import {
   validateAnswersAgainstSchema,
   type ChecklistSchema
 } from '../utils/checklistSchemaValidator';
+import { rewardsService } from './rewardsService';
 
 export class ReportService {
   private pool: Pool;
@@ -165,7 +166,7 @@ export class ReportService {
 
       const offerRes = await this.queryWithClient(
         client,
-        'SELECT employer_id, checklist_schema, schema_version FROM offers WHERE id = $1',
+        'SELECT employer_id, checklist_schema, schema_version, price FROM offers WHERE id = $1',
         [params.offerId]
       );
       if (offerRes.rows.length === 0) {
@@ -174,6 +175,7 @@ export class ReportService {
       const employerId = offerRes.rows[0].employer_id as string;
       const rawSchema = offerRes.rows[0].checklist_schema;
       const schemaVersion = Number(offerRes.rows[0].schema_version) || 1;
+      const offerPriceRaw = offerRes.rows[0].price;
 
       const parsed = parseChecklistSchema(rawSchema);
       if (!parsed.ok) {
@@ -317,6 +319,21 @@ export class ReportService {
       if (reportResult.rows.length === 0) {
         throw new Error('Ошибка при создании отчета');
       }
+
+      // Начисляем вознаграждение: пока считаем авто-принятие при создании отчёта.
+      // amount = вознаграждение оффера (в бонусах) — 1:1
+      const priceNum = typeof offerPriceRaw === 'string' ? parseFloat(offerPriceRaw) : Number(offerPriceRaw);
+      const amount = Number.isFinite(priceNum) ? Math.max(0, Math.round(priceNum)) : 0;
+      await rewardsService.creditForReport({
+        userId: params.userId,
+        offerId: params.offerId,
+        applicationId: params.applicationId,
+        reportId: reportResult.rows[0].report_id,
+        amount,
+        kind: 'bonus',
+        description: null,
+        client
+      });
 
       await client.query('COMMIT');
       const row = reportResult.rows[0];

@@ -42,12 +42,14 @@ export const getBanner = async (req: Request, res: Response): Promise<void> => {
 export const getOffers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { isFavourite, isPromo, authorId, active } = req.query;
+    const viewerUserId = (req as AuthenticatedRequest).userId || undefined;
     
     const filters = {
       isFavourite: isFavourite === 'true' ? true : undefined,
       isPromo: isPromo === 'true' ? true : isPromo === 'false' ? false : undefined,
       authorId: authorId as string,
-      active: active !== 'false'
+      active: active !== 'false',
+      viewerUserId
     };
 
     const offers = await dbService.getOffersWithFilters(filters);
