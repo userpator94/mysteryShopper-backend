@@ -6,6 +6,8 @@ import {
   type ChecklistSchema
 } from '../utils/checklistSchemaValidator';
 import { rewardsService } from './rewardsService';
+import { compressReportImage } from '../utils/imageCompress';
+import { countWordsInComment, type ApiReportStatus } from '../utils/reportStatus';
 
 export class ReportService {
   private pool: Pool;
@@ -166,7 +168,7 @@ export class ReportService {
 
       const offerRes = await this.queryWithClient(
         client,
-        'SELECT employer_id, checklist_schema, schema_version, price FROM offers WHERE id = $1',
+        'SELECT employer_id, checklist_schema, schema_version FROM offers WHERE id = $1',
         [params.offerId]
       );
       if (offerRes.rows.length === 0) {
@@ -175,7 +177,6 @@ export class ReportService {
       const employerId = offerRes.rows[0].employer_id as string;
       const rawSchema = offerRes.rows[0].checklist_schema;
       const schemaVersion = Number(offerRes.rows[0].schema_version) || 1;
-      const offerPriceRaw = offerRes.rows[0].price;
 
       const parsed = parseChecklistSchema(rawSchema);
       if (!parsed.ok) {
@@ -213,13 +214,14 @@ export class ReportService {
         for (let i = 0; i < params.photoFiles.length; i++) {
           const file = params.photoFiles[i];
           const itemId = photoItemIds[i];
+          const { buffer: buf, mimeType } = await compressReportImage(file.buffer, file.mimetype);
           const imageId = await this.createImageWithClient(
             client,
             file.filename,
             file.originalname,
-            file.mimetype,
-            file.size,
-            file.buffer
+            mimeType,
+            buf.length,
+            buf
           );
           photoIds.push(imageId);
           const base = mergedAnswers[itemId];
@@ -250,14 +252,18 @@ export class ReportService {
         if (params.checklistPhotoItemIds && params.checklistPhotoItemIds.length > 0) {
           throw new Error('VALIDATION:Поле checklist_photo_item_ids допустимо только для отчёта с чек-листом');
         }
+        if (params.photoFiles.length > 3) {
+          throw new Error('VALIDATION:К стандартному отчёту можно приложить не более 3 фотографий');
+        }
         for (const file of params.photoFiles) {
+          const { buffer: buf, mimeType } = await compressReportImage(file.buffer, file.mimetype);
           const imageId = await this.createImageWithClient(
             client,
             file.filename,
             file.originalname,
-            file.mimetype,
-            file.size,
-            file.buffer
+            mimeType,
+            buf.length,
+            buf
           );
           photoIds.push(imageId);
         }
@@ -276,6 +282,9 @@ export class ReportService {
           checklist_answers,
           checklist_schema_version,
           checklist_schema_snapshot,
+          is_approved,
+          payment_status,
+          employer_review_comment,
           submitted_at
         )
         VALUES (
@@ -287,6 +296,9 @@ export class ReportService {
           $9::jsonb,
           $10,
           $11::jsonb,
+          FALSE,
+          'pending',
+          NULL,
           CURRENT_TIMESTAMP
         )
         RETURNING 
@@ -320,21 +332,6 @@ export class ReportService {
         throw new Error('Ошибка при создании отчета');
       }
 
-      // Начисляем вознаграждение: пока считаем авто-принятие при создании отчёта.
-      // amount = вознаграждение оффера (в бонусах) — 1:1
-      const priceNum = typeof offerPriceRaw === 'string' ? parseFloat(offerPriceRaw) : Number(offerPriceRaw);
-      const amount = Number.isFinite(priceNum) ? Math.max(0, Math.round(priceNum)) : 0;
-      await rewardsService.creditForReport({
-        userId: params.userId,
-        offerId: params.offerId,
-        applicationId: params.applicationId,
-        reportId: reportResult.rows[0].report_id,
-        amount,
-        kind: 'bonus',
-        description: null,
-        client
-      });
-
       await client.query('COMMIT');
       const row = reportResult.rows[0];
       return {
@@ -347,6 +344,118 @@ export class ReportService {
         photos: row.photos || [],
         submitted_at: row.submitted_at
       };
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Модерация отчёта заказчиком: approve (начисление бонусов) или reject (комментарий ≥10 слов).
+   */
+  async reviewReport(params: {
+    employerUserId: string;
+    employerId: string;
+    offerId: string;
+    reportId: string;
+    decision: 'approve' | 'reject';
+    comment?: string | null;
+  }): Promise<{ report_status: ApiReportStatus }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const sel = await this.queryWithClient(
+        client,
+        `SELECT r.id, r.application_id, r.user_id AS executor_user_id, r.payment_status::text AS payment_status,
+                r.is_approved, o.employer_id, o.price
+         FROM offer_reports r
+         JOIN offers o ON o.id = r.offer_id
+         WHERE r.id = $1 AND r.offer_id = $2 AND o.employer_id = $3
+         FOR UPDATE`,
+        [params.reportId, params.offerId, params.employerId]
+      );
+      if (sel.rows.length === 0) {
+        throw new Error('REPORT_NOT_FOUND');
+      }
+      const row = sel.rows[0] as {
+        payment_status: string;
+        is_approved: boolean;
+        employer_id: string;
+        price: unknown;
+        executor_user_id: string;
+        application_id: string;
+      };
+
+      const ps = String(row.payment_status || '').toLowerCase();
+
+      if (params.decision === 'reject') {
+        const c = (params.comment || '').trim();
+        if (countWordsInComment(c) < 10) {
+          throw new Error('REJECT_COMMENT_MIN_WORDS');
+        }
+        if (ps === 'paid') {
+          throw new Error('REJECT_NOT_ALLOWED_PAID');
+        }
+        if (ps === 'rejected') {
+          await client.query('COMMIT');
+          return { report_status: 'rejected' };
+        }
+        await this.queryWithClient(
+          client,
+          `UPDATE offer_reports
+           SET payment_status = 'rejected',
+               is_approved = FALSE,
+               reviewed_at = CURRENT_TIMESTAMP,
+               reviewed_by = $1,
+               employer_review_comment = $2
+           WHERE id = $3`,
+          [params.employerUserId, c, params.reportId]
+        );
+        await client.query('COMMIT');
+        return { report_status: 'rejected' };
+      }
+
+      // approve
+      if (ps === 'rejected') {
+        throw new Error('APPROVE_NOT_ALLOWED_REJECTED');
+      }
+      if (ps === 'paid' && row.is_approved === true) {
+        await client.query('COMMIT');
+        return { report_status: 'approved' };
+      }
+
+      const priceRaw = row.price;
+      const priceNum = typeof priceRaw === 'string' ? parseFloat(priceRaw) : Number(priceRaw);
+      const amount = Number.isFinite(priceNum) ? Math.max(0, Math.round(priceNum)) : 0;
+
+      await this.queryWithClient(
+        client,
+        `UPDATE offer_reports
+         SET payment_status = 'paid',
+             is_approved = TRUE,
+             reviewed_at = CURRENT_TIMESTAMP,
+             reviewed_by = $1,
+             payment_date = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [params.employerUserId, params.reportId]
+      );
+
+      await rewardsService.creditForReport({
+        userId: row.executor_user_id,
+        offerId: params.offerId,
+        applicationId: row.application_id,
+        reportId: params.reportId,
+        amount,
+        kind: 'bonus',
+        description: null,
+        client
+      });
+
+      await client.query('COMMIT');
+      return { report_status: 'approved' };
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;

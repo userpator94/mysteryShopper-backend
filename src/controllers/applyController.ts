@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { ApplyRequest, ApplyResponse, GetAppliesResponse, ApiErrorResponse } from '../types';
 import { applyService } from '../services/applyService';
 import { dbService } from '../services/databaseService';
+import { countWordsInComment } from '../utils/reportStatus';
 
 export const applyToOffer = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -169,8 +170,9 @@ export const getOfferApplications = async (req: AuthenticatedRequest, res: Respo
 export const patchApplicationStatus = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const applicationId = req.params.id;
-    const { status } = req.body as { status?: string };
+    const { status, comment } = req.body as { status?: string; comment?: string };
     const employerId = req.employerId!;
+    const employerUserId = req.userId!;
 
     if (!status || !['approved', 'rejected'].includes(status)) {
       const response: ApiErrorResponse = {
@@ -179,6 +181,21 @@ export const patchApplicationStatus = async (req: AuthenticatedRequest, res: Res
       };
       res.status(422).json(response);
       return;
+    }
+
+    if (status === 'rejected') {
+      const c = typeof comment === 'string' ? comment.trim() : '';
+      if (countWordsInComment(c) < 10) {
+        const response: ApiErrorResponse = {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'При отклонении заявки укажите комментарий не короче 10 слов'
+          }
+        };
+        res.status(422).json(response);
+        return;
+      }
     }
 
     const application = await applyService.getApplicationById(applicationId);
@@ -201,7 +218,10 @@ export const patchApplicationStatus = async (req: AuthenticatedRequest, res: Res
       return;
     }
 
-    const updated = await applyService.updateApplicationStatus(applicationId, status as 'approved' | 'rejected');
+    const updated = await applyService.updateApplicationStatus(applicationId, status as 'approved' | 'rejected', {
+      employerUserId: status === 'approved' ? employerUserId : undefined,
+      decisionComment: status === 'rejected' ? String(comment || '').trim() : undefined
+    });
     if (updated?.offer_id) {
       await dbService.updateOfferParticipants(updated.offer_id);
     }

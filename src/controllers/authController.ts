@@ -309,3 +309,61 @@ export const logout = async (req: AuthenticatedRequest, res: Response): Promise<
   }
 };
 
+export const changePassword = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.userId!;
+    const { current_password, new_password } = req.body as {
+      current_password?: string;
+      new_password?: string;
+    };
+
+    const user = await dbService.getUserByEmail(req.userEmail!);
+    if (!user || user.id !== userId) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Пользователь не найден' }
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    const isCurrentValid = await authService.comparePassword(String(current_password || ''), user.password_hash);
+    if (!isCurrentValid) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'INVALID_CREDENTIALS', message: 'Неверный текущий пароль' }
+      };
+      res.status(401).json(response);
+      return;
+    }
+
+    const hashed = await authService.hashPassword(String(new_password || ''));
+    const updated = await dbService.updateUserPasswordHash(userId, hashed);
+    if (!updated) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Пользователь не найден' }
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { message: 'Пароль успешно обновлён' }
+    });
+  } catch (error: any) {
+    console.error('Error in changePassword:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message:
+          process.env.NODE_ENV === 'development'
+            ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
+            : 'Внутренняя ошибка сервера'
+      }
+    };
+    res.status(500).json(response);
+  }
+};

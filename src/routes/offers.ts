@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { createOffer, getMyOffers, updateOffer, deleteOffer, closeOfferEarly } from '../controllers/offersController';
 import { getOfferApplications } from '../controllers/applyController';
+import { getOfferEmployerSummaryForExecutor } from '../controllers/offerEmployerSummaryController';
 import {
   getOfferReports,
   getOfferReportById,
   downloadOfferReportPdf
 } from '../controllers/employerReportsController';
+import { patchReportReview } from '../controllers/employerReportReviewController';
 import { getEmployerExecutorProfile } from '../controllers/employerExecutorProfileController';
 import { getMyOfferReport } from '../controllers/executorReportsController';
 import { authenticateJWT, requireEmployer } from '../middleware/authMiddleware';
@@ -17,6 +19,9 @@ router.get('/my/offers', authenticateJWT, requireEmployer, getMyOffers);
 
 // Просмотр своего отчёта (исполнитель)
 router.get('/offers/:offerId/my-report', authenticateJWT, getMyOfferReport);
+
+// Публичная сводка заказчика по задаче (исполнитель с заявкой)
+router.get('/offers/:offerId/employer-summary', authenticateJWT, getOfferEmployerSummaryForExecutor);
 
 // Отчёты по офферу (заказчик) — до маршрутов с одним сегментом :id
 router.get(
@@ -30,6 +35,12 @@ router.get(
   authenticateJWT,
   requireEmployer,
   getOfferReportById
+);
+router.patch(
+  '/offers/:offerId/reports/:reportId/review',
+  authenticateJWT,
+  requireEmployer,
+  patchReportReview
 );
 router.get(
   '/offers/:offerId/executors/:executorUserId/profile',

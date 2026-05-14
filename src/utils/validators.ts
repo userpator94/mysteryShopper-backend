@@ -131,6 +131,27 @@ export const signupValidation: ValidationChain[] = [
     .withMessage('URL не более 500 символов')
 ];
 
+export const changePasswordValidation: ValidationChain[] = [
+  body('current_password')
+    .notEmpty()
+    .withMessage('Текущий пароль обязателен'),
+
+  body('new_password')
+    .notEmpty()
+    .withMessage('Новый пароль обязателен')
+    .isLength({ min: 6 })
+    .withMessage('Пароль должен содержать минимум 6 символов')
+    .matches(passwordRegex)
+    .withMessage('Пароль может содержать только латинские буквы, цифры и символы !@#$%^&*()-_=+')
+    .custom((value, { req }) => {
+      const cur = (req.body as { current_password?: string })?.current_password;
+      if (typeof cur === 'string' && value === cur) {
+        throw new Error('Новый пароль должен отличаться от текущего');
+      }
+      return true;
+    })
+];
+
 // UUID validation regex
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

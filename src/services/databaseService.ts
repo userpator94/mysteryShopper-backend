@@ -841,7 +841,7 @@ export class DatabaseService {
     const orderSql =
       sortBy === 'task_completed_at'
         ? 'oa.completed_at DESC NULLS LAST, r.submitted_at DESC'
-        : 'r.submitted_at DESC';
+        : '(CASE WHEN COALESCE(r.payment_status::text, \'\') = \'pending\' THEN 0 ELSE 1 END), r.submitted_at DESC';
     const query = `
       SELECT
         r.id,
@@ -855,6 +855,11 @@ export class DatabaseService {
         r.checklist_schema_version,
         r.checklist_schema_snapshot,
         r.photos,
+        r.payment_status,
+        r.is_approved,
+        r.reviewed_at,
+        r.reviewed_by,
+        r.employer_review_comment,
         RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
         u_ex.name AS executor_name,
         u_ex.surname AS executor_surname
@@ -904,6 +909,11 @@ export class DatabaseService {
         r.checklist_schema_version,
         r.checklist_schema_snapshot,
         r.photos,
+        r.payment_status,
+        r.is_approved,
+        r.reviewed_at,
+        r.reviewed_by,
+        r.employer_review_comment,
         RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
         u_ex.name AS executor_name,
         u_ex.surname AS executor_surname
@@ -946,7 +956,12 @@ export class DatabaseService {
         r.checklist_answers,
         r.checklist_schema_version,
         r.checklist_schema_snapshot,
-        r.photos
+        r.photos,
+        r.payment_status,
+        r.is_approved,
+        r.reviewed_at,
+        r.reviewed_by,
+        r.employer_review_comment
       FROM offer_reports r
       JOIN offer_applications oa ON oa.id = r.application_id
       WHERE r.offer_id = $1 AND r.user_id = $2
@@ -1027,6 +1042,42 @@ export class DatabaseService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Публичные данные заказчика по задаче для исполнителя:
+   * есть неотменённая заявка этого пользователя на оффер.
+   */
+  async getEmployerPublicSummaryForOffer(
+    executorUserId: string,
+    offerId: string
+  ): Promise<{ company: string; description: string | null; website: string | null } | null> {
+    const r = await this.query(
+      `SELECT e.company, e.description, e.website
+       FROM offers o
+       INNER JOIN employers e ON e.id = o.employer_id AND e.is_active = TRUE
+       INNER JOIN offer_applications oa ON oa.offer_id = o.id AND oa.user_id = $1
+       WHERE o.id = $2
+         AND (oa.status IS NULL OR oa.status <> 'cancelled')
+       ORDER BY oa.applied_at DESC
+       LIMIT 1`,
+      [executorUserId, offerId]
+    );
+    if (!r.rows.length) return null;
+    const row = r.rows[0] as { company: string; description: string | null; website: string | null };
+    return {
+      company: row.company,
+      description: row.description ?? null,
+      website: row.website ?? null
+    };
+  }
+
+  async updateUserPasswordHash(userId: string, passwordHash: string): Promise<boolean> {
+    const r = await this.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2 AND is_active = TRUE RETURNING id',
+      [passwordHash, userId]
+    );
+    return r.rows.length > 0;
   }
 
   // Удалить оффер (или мягкое удаление — is_active = false)

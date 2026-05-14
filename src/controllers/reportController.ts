@@ -178,6 +178,48 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
       }
     }
 
+    const hasChecklistPayload =
+      (checklistAnswers !== null &&
+        typeof checklistAnswers === 'object' &&
+        !Array.isArray(checklistAnswers) &&
+        Object.keys(checklistAnswers).length > 0) ||
+      (checklistPhotoItemIds !== null && checklistPhotoItemIds.length > 0);
+
+    const isStandardPhotoBundle =
+      ratingNum !== null &&
+      !Number.isNaN(ratingNum as number) &&
+      (ratingNum as number) >= 1 &&
+      (ratingNum as number) <= 5 &&
+      !hasChecklistPayload;
+
+    if (isStandardPhotoBundle) {
+      const MAX_STD_BYTES = 5 * 1024 * 1024;
+      if (photoFiles.length > 3) {
+        const response: ApiErrorResponse = {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'К стандартному отчёту можно приложить не более 3 фотографий'
+          }
+        };
+        res.status(422).json(response);
+        return;
+      }
+      for (const f of photoFiles) {
+        if (f.size > MAX_STD_BYTES) {
+          const response: ApiErrorResponse = {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Каждый файл стандартного отчёта не должен превышать 5 МБ'
+            }
+          };
+          res.status(422).json(response);
+          return;
+        }
+      }
+    }
+
     const commentsText =
       typeof feedback.comment === 'string' ? feedback.comment.trim() : '';
 

@@ -248,6 +248,8 @@ export interface Application {
   status?: string;
   /** Уже есть отчёт по этой заявке — повторно отправить нельзя */
   has_report?: boolean;
+  /** Комментарий заказчика при отклонении заявки */
+  employer_decision_comment?: string;
 }
 
 export interface GetAppliesResponse {

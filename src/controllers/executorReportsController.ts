@@ -2,8 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { ApiErrorResponse } from '../types';
 import { dbService } from '../services/databaseService';
-
-const REPORT_STATUS = 'accepted_auto';
+import { withReportApiFields } from '../utils/reportStatus';
 
 export const getMyOfferReport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -20,7 +19,7 @@ export const getMyOfferReport = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    res.status(200).json({ success: true, data: { ...row, report_status: REPORT_STATUS } });
+    res.status(200).json({ success: true, data: withReportApiFields(row as Record<string, unknown>) });
   } catch (error: any) {
     console.error('getMyOfferReport:', error);
     const response: ApiErrorResponse = {

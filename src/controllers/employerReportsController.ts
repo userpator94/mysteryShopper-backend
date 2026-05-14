@@ -3,12 +3,7 @@ import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { ApiErrorResponse } from '../types';
 import { dbService } from '../services/databaseService';
 import { buildOfferReportPdfBuffer } from '../services/reportPdfService';
-
-const REPORT_STATUS = 'accepted_auto';
-
-function withReportStatus<T extends Record<string, unknown>>(row: T): T & { report_status: string } {
-  return { ...row, report_status: REPORT_STATUS };
-}
+import { withReportApiFields } from '../utils/reportStatus';
 
 export const getOfferReports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -28,7 +23,7 @@ export const getOfferReports = async (req: AuthenticatedRequest, res: Response):
     }
 
     const rows = await dbService.getEmployerOfferReports(employerId, offerId, sortBy);
-    res.status(200).json({ success: true, data: rows.map((r) => withReportStatus(r)) });
+    res.status(200).json({ success: true, data: rows.map((r) => withReportApiFields(r as Record<string, unknown>)) });
   } catch (error: any) {
     console.error('getOfferReports:', error);
     const response: ApiErrorResponse = {
@@ -54,7 +49,7 @@ export const getOfferReportById = async (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    res.status(200).json({ success: true, data: withReportStatus(row) });
+    res.status(200).json({ success: true, data: withReportApiFields(row as Record<string, unknown>) });
   } catch (error: any) {
     console.error('getOfferReportById:', error);
     const response: ApiErrorResponse = {
