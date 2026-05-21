@@ -2,6 +2,12 @@ import { Pool } from 'pg';
 import pool from '../config/database';
 import { MAX_PARTICIPANTS_UNLIMITED } from '../config/offerLimits';
 import { userInitials, formatExecutorMaskLabel, formatExecutorDottedInitials } from '../utils/userDisplay';
+import {
+  PG_AVATAR_ID_IS_IMAGE_UUID,
+  avatarEmojiFromAvatarId,
+  pickRandomExecutorAvatarEmoji,
+  resolveUserAvatarFields
+} from '../utils/avatarEmoji';
 
 /**
  * Число занятых мест считаем из offer_applications, чтобы не зависеть от поля offers.current_participants,
@@ -184,9 +190,9 @@ export class DatabaseService {
    */
   async getOfferPendingExecutors(
     offerId: string
-  ): Promise<Array<{ user_id: string; initials: string }>> {
+  ): Promise<Array<{ user_id: string; initials: string; avatar_emoji: string | null }>> {
     const q = `
-      SELECT oa.user_id, u.name, u.surname
+      SELECT oa.user_id, u.name, u.surname, u.avatar_id
       FROM offer_applications oa
       JOIN users u ON u.id = oa.user_id
       WHERE oa.offer_id = $1
@@ -194,10 +200,13 @@ export class DatabaseService {
       ORDER BY oa.applied_at ASC
     `;
     const r = await this.query(q, [offerId]);
-    return (r.rows as Array<{ user_id: string; name: string; surname: string }>).map((row) => ({
-      user_id: row.user_id,
-      initials: userInitials(row.name, row.surname)
-    }));
+    return (r.rows as Array<{ user_id: string; name: string; surname: string; avatar_id: string | null }>).map(
+      (row) => ({
+        user_id: row.user_id,
+        initials: userInitials(row.name, row.surname),
+        avatar_emoji: avatarEmojiFromAvatarId(row.avatar_id)
+      })
+    );
   }
 
   /**
@@ -205,9 +214,9 @@ export class DatabaseService {
    */
   async getOfferInWorkExecutors(
     offerId: string
-  ): Promise<Array<{ user_id: string; initials: string }>> {
+  ): Promise<Array<{ user_id: string; initials: string; avatar_emoji: string | null }>> {
     const q = `
-      SELECT oa.user_id, u.name, u.surname
+      SELECT oa.user_id, u.name, u.surname, u.avatar_id
       FROM offer_applications oa
       JOIN users u ON u.id = oa.user_id
       WHERE oa.offer_id = $1
@@ -216,10 +225,13 @@ export class DatabaseService {
       ORDER BY oa.approved_at NULLS LAST, oa.applied_at ASC
     `;
     const r = await this.query(q, [offerId]);
-    return (r.rows as Array<{ user_id: string; name: string; surname: string }>).map((row) => ({
-      user_id: row.user_id,
-      initials: userInitials(row.name, row.surname)
-    }));
+    return (r.rows as Array<{ user_id: string; name: string; surname: string; avatar_id: string | null }>).map(
+      (row) => ({
+        user_id: row.user_id,
+        initials: userInitials(row.name, row.surname),
+        avatar_emoji: avatarEmojiFromAvatarId(row.avatar_id)
+      })
+    );
   }
 
   /**
@@ -227,20 +239,23 @@ export class DatabaseService {
    */
   async getOfferExecutorsWhoReported(
     offerId: string
-  ): Promise<Array<{ user_id: string; initials: string }>> {
+  ): Promise<Array<{ user_id: string; initials: string; avatar_emoji: string | null }>> {
     const q = `
-      SELECT r.user_id, u.name, u.surname
+      SELECT r.user_id, u.name, u.surname, u.avatar_id
       FROM offer_reports r
       JOIN users u ON u.id = r.user_id
       WHERE r.offer_id = $1
-      GROUP BY r.user_id, u.name, u.surname
+      GROUP BY r.user_id, u.name, u.surname, u.avatar_id
       ORDER BY MAX(r.submitted_at) DESC
     `;
     const r = await this.query(q, [offerId]);
-    return (r.rows as Array<{ user_id: string; name: string; surname: string }>).map((row) => ({
-      user_id: row.user_id,
-      initials: userInitials(row.name, row.surname)
-    }));
+    return (r.rows as Array<{ user_id: string; name: string; surname: string; avatar_id: string | null }>).map(
+      (row) => ({
+        user_id: row.user_id,
+        initials: userInitials(row.name, row.surname),
+        avatar_emoji: avatarEmojiFromAvatarId(row.avatar_id)
+      })
+    );
   }
 
   /**
@@ -256,6 +271,7 @@ export class DatabaseService {
     masked_name: string;
     executor_label: string;
     avatar_url: string | null;
+    avatar_emoji: string | null;
     registered_at: string;
     executor_timezone: string | null;
     stats: {
@@ -280,12 +296,13 @@ export class DatabaseService {
     if (!link.rows.length) return null;
 
     const userRes = await this.query(
-      `SELECT u.id, u.name, u.surname, u.role, u.created_at,
+      `SELECT u.id, u.name, u.surname, u.role, u.created_at, u.avatar_id,
               i.url AS avatar_url
        FROM users u
        LEFT JOIN images i ON i.is_active = TRUE
          AND u.avatar_id IS NOT NULL
          AND TRIM(u.avatar_id) <> ''
+         AND u.${PG_AVATAR_ID_IS_IMAGE_UUID}
          AND i.id::text = TRIM(u.avatar_id)
        WHERE u.id = $1 AND u.is_active = TRUE`,
       [executorUserId]
@@ -297,6 +314,7 @@ export class DatabaseService {
       surname: string;
       role: string;
       created_at: string;
+      avatar_id: string | null;
       avatar_url: string | null;
     };
     if (row.role !== 'user') return null;
@@ -355,11 +373,13 @@ export class DatabaseService {
           ? String(createdRaw)
           : '';
 
+    const { avatar_url, avatar_emoji } = resolveUserAvatarFields(row.avatar_id, row.avatar_url);
     return {
       user_id: row.id,
       masked_name,
       executor_label,
-      avatar_url: row.avatar_url ?? null,
+      avatar_url,
+      avatar_emoji,
       registered_at,
       executor_timezone: null,
       stats: {
@@ -560,11 +580,12 @@ export class DatabaseService {
         name,
         surname,
         is_active,
-        role
+        role,
+        avatar_id
       FROM users
       WHERE email = $1
     `;
-    
+
     const result = await this.query(query, [email]);
     return result.rows[0] || null;
   }
@@ -608,21 +629,24 @@ export class DatabaseService {
     role?: string;
   }): Promise<any> {
     const role = userData.role === 'employer' ? 'employer' : 'user';
+    const avatarId = role === 'user' ? pickRandomExecutorAvatarEmoji() : null;
     const query = `
-      INSERT INTO users (email, password_hash, phone, name, surname, is_active, role, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, TRUE, $6, NOW(), NOW())
-      RETURNING id, email, phone, name, surname, role, created_at
+      INSERT INTO users (email, password_hash, phone, name, surname, is_active, role, avatar_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, NOW(), NOW())
+      RETURNING id, email, phone, name, surname, role, avatar_id, created_at
     `;
-    
+
     const result = await this.query(query, [
       userData.email,
       userData.password,
       userData.phone,
       userData.name,
       userData.lastname,
-      role
+      role,
+      avatarId
     ]);
 
+    const savedAvatarId = result.rows[0].avatar_id as string | null;
     return {
       id: result.rows[0].id,
       email: result.rows[0].email,
@@ -630,6 +654,8 @@ export class DatabaseService {
       name: result.rows[0].name,
       lastname: result.rows[0].surname,
       role: result.rows[0].role || 'user',
+      avatar_id: savedAvatarId,
+      avatar_emoji: avatarEmojiFromAvatarId(savedAvatarId),
       createdAt: result.rows[0].created_at
     };
   }
@@ -880,7 +906,8 @@ export class DatabaseService {
         r.employer_review_comment,
         RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
         u_ex.name AS executor_name,
-        u_ex.surname AS executor_surname
+        u_ex.surname AS executor_surname,
+        u_ex.avatar_id AS executor_avatar_id
       FROM offer_reports r
       JOIN offers o ON o.id = r.offer_id
       JOIN offer_applications oa ON oa.id = r.application_id
@@ -894,15 +921,19 @@ export class DatabaseService {
         executor_suffix: string;
         executor_name?: string;
         executor_surname?: string;
+        executor_avatar_id?: string | null;
         [key: string]: unknown;
       }) => {
-        const { executor_name, executor_surname, executor_suffix, ...rest } = row;
+        const { executor_name, executor_surname, executor_suffix, executor_avatar_id, ...rest } = row;
         return {
           ...rest,
           executor_label: formatExecutorMaskLabel(
             String(executor_suffix ?? ''),
             executor_name,
             executor_surname
+          ),
+          executor_avatar_emoji: avatarEmojiFromAvatarId(
+            typeof executor_avatar_id === 'string' ? executor_avatar_id : null
           )
         };
       }
@@ -955,7 +986,8 @@ export class DatabaseService {
         o.end_date AS offer_end_date,
         RIGHT(REPLACE(oa.user_id::text, '-', ''), 4) AS executor_suffix,
         u.name AS executor_name,
-        u.surname AS executor_surname
+        u.surname AS executor_surname,
+        u.avatar_id AS executor_avatar_id
       FROM offer_applications oa
       JOIN offers o ON o.id = oa.offer_id
       JOIN users u ON u.id = oa.user_id
@@ -968,15 +1000,19 @@ export class DatabaseService {
         executor_suffix: string;
         executor_name?: string;
         executor_surname?: string;
+        executor_avatar_id?: string | null;
         [key: string]: unknown;
       }) => {
-        const { executor_name, executor_surname, executor_suffix, ...rest } = row;
+        const { executor_name, executor_surname, executor_suffix, executor_avatar_id, ...rest } = row;
         return {
           ...rest,
           executor_label: formatExecutorMaskLabel(
             String(executor_suffix ?? ''),
             executor_name,
             executor_surname
+          ),
+          executor_avatar_emoji: avatarEmojiFromAvatarId(
+            typeof executor_avatar_id === 'string' ? executor_avatar_id : null
           )
         };
       }
@@ -1007,7 +1043,8 @@ export class DatabaseService {
         r.employer_review_comment,
         RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
         u_ex.name AS executor_name,
-        u_ex.surname AS executor_surname
+        u_ex.surname AS executor_surname,
+        u_ex.avatar_id AS executor_avatar_id
       FROM offer_reports r
       JOIN offers o ON o.id = r.offer_id
       JOIN offer_applications oa ON oa.id = r.application_id
@@ -1023,15 +1060,19 @@ export class DatabaseService {
         executor_suffix: string;
         executor_name?: string;
         executor_surname?: string;
+        executor_avatar_id?: string | null;
         [key: string]: unknown;
       }) => {
-        const { executor_name, executor_surname, executor_suffix, ...rest } = row;
+        const { executor_name, executor_surname, executor_suffix, executor_avatar_id, ...rest } = row;
         return {
           ...rest,
           executor_label: formatExecutorMaskLabel(
             String(executor_suffix ?? ''),
             executor_name,
             executor_surname
+          ),
+          executor_avatar_emoji: avatarEmojiFromAvatarId(
+            typeof executor_avatar_id === 'string' ? executor_avatar_id : null
           )
         };
       }
@@ -1063,7 +1104,8 @@ export class DatabaseService {
         r.employer_review_comment,
         RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
         u_ex.name AS executor_name,
-        u_ex.surname AS executor_surname
+        u_ex.surname AS executor_surname,
+        u_ex.avatar_id AS executor_avatar_id
       FROM offer_reports r
       JOIN offers o ON o.id = r.offer_id
       JOIN offer_applications oa ON oa.id = r.application_id
@@ -1077,16 +1119,21 @@ export class DatabaseService {
       executor_name,
       executor_surname,
       executor_suffix,
+      executor_avatar_id,
       ...rest
     } = row as {
       executor_name?: string;
       executor_surname?: string;
       executor_suffix: string;
+      executor_avatar_id?: string | null;
       [key: string]: unknown;
     };
     return {
       ...rest,
-      executor_label: formatExecutorMaskLabel(String(executor_suffix ?? ''), executor_name, executor_surname)
+      executor_label: formatExecutorMaskLabel(String(executor_suffix ?? ''), executor_name, executor_surname),
+      executor_avatar_emoji: avatarEmojiFromAvatarId(
+        typeof executor_avatar_id === 'string' ? executor_avatar_id : null
+      )
     };
   }
 

@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { dbService } from '../services/databaseService';
 import { authService } from '../services/authService';
 import { normalizePhone, formatPhone } from '../utils/validators';
+import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -59,7 +60,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       name: user.name || '',
       surname: user.surname || '',
       phone: user.phone ? formatPhone(user.phone) : '',
-      role
+      role,
+      avatar_emoji: role === 'user' ? avatarEmojiFromAvatarId(user.avatar_id) : null
     };
 
     // Генерируем JWT токен
@@ -170,7 +172,8 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       name: newUser.name,
       surname: newUser.lastname,
       phone: formatPhone(newUser.phone),
-      role: newUser.role as AuthUser['role']
+      role: newUser.role as AuthUser['role'],
+      avatar_emoji: newUser.avatar_emoji ?? null
     };
 
     const token = authService.generateToken(authUser);
@@ -252,7 +255,8 @@ export const getMe = async (req: AuthenticatedRequest, res: Response): Promise<v
       surname: user.surname || '',
       email: user.email,
       phone: user.phone ? formatPhone(user.phone) : '',
-      role
+      role,
+      avatar_emoji: role === 'user' ? avatarEmojiFromAvatarId(user.avatar_id) : null
     };
     if (role === 'employer') {
       const employer = await dbService.getEmployerByUserId(userId);

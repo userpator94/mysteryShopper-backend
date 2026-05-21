@@ -158,6 +158,8 @@ export interface AuthUser {
   surname: string;
   phone: string;
   role: UserRole;
+  /** Эмодзи-аватар исполнителя (role = user) */
+  avatar_emoji?: string | null;
 }
 
 export interface LoginResponse {
@@ -189,6 +191,7 @@ export interface MeResponse {
     email: string;
     phone: string;
     role: UserRole;
+    avatar_emoji?: string | null;
     company?: string;
     description?: string;
     website?: string;
