@@ -106,13 +106,17 @@ export const getApplies = async (req: AuthenticatedRequest, res: Response): Prom
     }
 
     // Если offer_id не указан, возвращаем все заявки пользователя
-    const applications = await applyService.getUserApplications(userId);
-    
+    const [applications, cancelled_count] = await Promise.all([
+      applyService.getUserApplications(userId),
+      applyService.countUserCancelledApplications(userId)
+    ]);
+
     const response: GetAppliesResponse = {
       success: true,
-      data: applications
+      data: applications,
+      meta: { cancelled_count }
     };
-    
+
     res.json(response);
   } catch (error: any) {
     console.error('Error fetching applications:', error);

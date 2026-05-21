@@ -74,6 +74,16 @@ export class ApplyService {
     };
   }
 
+  async countUserCancelledApplications(userId: string): Promise<number> {
+    const query = `
+      SELECT COUNT(*)::int AS c
+      FROM offer_applications
+      WHERE user_id = $1 AND status = 'cancelled'
+    `;
+    const result = await this.query(query, [userId]);
+    return Number(result.rows[0]?.c ?? 0);
+  }
+
   // Получить все заявки пользователя (без cancelled)
   async getUserApplications(userId: string): Promise<any[]> {
     const query = `

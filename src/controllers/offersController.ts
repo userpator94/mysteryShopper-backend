@@ -4,6 +4,7 @@ import { ApiErrorResponse } from '../types';
 import { dbService } from '../services/databaseService';
 import { MAX_PARTICIPANTS_UNLIMITED } from '../config/offerLimits';
 import { parseChecklistSchema } from '../utils/checklistSchemaValidator';
+import { parseLocationPoints } from '../utils/locationPointsValidator';
 
 /**
  * Лимит: 1…998 или MAX_PARTICIPANTS_UNLIMITED (999) = без ограничения.
@@ -114,12 +115,26 @@ export const createOffer = async (req: AuthenticatedRequest, res: Response): Pro
       schema_version = raw.schema_version;
     }
 
+    let location_points: import('../utils/locationPointsValidator').LocationPoint[] | null = null;
+    if (raw.location_points !== undefined) {
+      const lp = parseLocationPoints(raw.location_points);
+      if (!lp.ok) {
+        res.status(422).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: lp.message }
+        } as ApiErrorResponse);
+        return;
+      }
+      location_points = lp.points;
+    }
+
     const offer = await dbService.createOffer({
       employer_id: employerId,
       title,
       description: typeof raw.description === 'string' ? raw.description.trim() : undefined,
       price: priceNumber,
       location: typeof raw.location === 'string' ? raw.location.trim() : undefined,
+      location_points,
       requirements: typeof raw.requirements === 'string' ? raw.requirements.trim() : undefined,
       tags: tags.length ? tags : undefined,
       start_date: startDate,
@@ -208,6 +223,17 @@ export const updateOffer = async (req: AuthenticatedRequest, res: Response): Pro
         }
       };
       res.status(403).json(response);
+      return;
+    }
+
+    if (body.location_points !== undefined) {
+      res.status(422).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Метки на карте задаются только при создании задачи'
+        }
+      } as ApiErrorResponse);
       return;
     }
 

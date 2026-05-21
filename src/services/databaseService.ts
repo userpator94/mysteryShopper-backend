@@ -690,7 +690,19 @@ export class DatabaseService {
             WHERE oa.offer_id = o.id
               AND oa.status IN ('approved', 'in_progress', 'completed')
           )
-        ) AS can_edit
+        ) AS can_edit,
+        (
+          SELECT COUNT(*)::int
+          FROM offer_applications oa_p
+          WHERE oa_p.offer_id = o.id AND oa_p.status = 'pending'
+        ) AS pending_applications_count,
+        (
+          SELECT COUNT(*)::int
+          FROM offer_reports r_p
+          WHERE r_p.offer_id = o.id
+            AND COALESCE(r_p.payment_status::text, 'pending') = 'pending'
+            AND COALESCE(r_p.is_approved, FALSE) = FALSE
+        ) AS pending_reports_count
       FROM offers o
       JOIN employers e ON o.employer_id = e.id
       LEFT JOIN users u ON e.user_id = u.id
@@ -711,6 +723,7 @@ export class DatabaseService {
     description?: string;
     price?: number;
     location?: string;
+    location_points?: unknown | null;
     requirements?: string;
     tags?: string[];
     start_date: Date;
@@ -723,13 +736,17 @@ export class DatabaseService {
     schema_version?: number;
   }): Promise<any> {
     const tagsJson = Array.isArray(data.tags) ? JSON.stringify(data.tags) : '[]';
+    const locationPointsJson =
+      data.location_points !== undefined && data.location_points !== null
+        ? JSON.stringify(data.location_points)
+        : null;
     const query = `
       INSERT INTO offers (
-        employer_id, title, description, price, location, requirements, tags,
+        employer_id, title, description, price, location, location_points, requirements, tags,
         start_date, end_date, max_participants, current_participants, is_promo, image_id, numeric_info, is_active, created_at, updated_at,
         checklist_schema, schema_version
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, 0, $11, $12, $13, TRUE, NOW(), NOW(), $14::jsonb, $15)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, $11, 0, $12, $13, $14, TRUE, NOW(), NOW(), $15::jsonb, $16)
       RETURNING *
     `;
     const price = data.price != null && !Number.isNaN(Number(data.price)) ? Number(data.price) : 0;
@@ -745,6 +762,7 @@ export class DatabaseService {
       data.description || null,
       price,
       data.location || null,
+      locationPointsJson,
       data.requirements || null,
       tagsJson,
       data.start_date,
@@ -871,6 +889,135 @@ export class DatabaseService {
       ORDER BY ${orderSql}
     `;
     const result = await this.query(query, [offerId, employerId]);
+    return result.rows.map(
+      (row: {
+        executor_suffix: string;
+        executor_name?: string;
+        executor_surname?: string;
+        [key: string]: unknown;
+      }) => {
+        const { executor_name, executor_surname, executor_suffix, ...rest } = row;
+        return {
+          ...rest,
+          executor_label: formatExecutorMaskLabel(
+            String(executor_suffix ?? ''),
+            executor_name,
+            executor_surname
+          )
+        };
+      }
+    );
+  }
+
+  /** Счётчики входящих заказчика (для бейджей в навигации). */
+  async getEmployerInboxCounts(employerId: string): Promise<{
+    pending_applications: number;
+    pending_reports: number;
+  }> {
+    const query = `
+      SELECT
+        (
+          SELECT COUNT(*)::int
+          FROM offer_applications oa
+          JOIN offers o ON o.id = oa.offer_id
+          WHERE o.employer_id = $1 AND oa.status = 'pending'
+        ) AS pending_applications,
+        (
+          SELECT COUNT(*)::int
+          FROM offer_reports r
+          JOIN offers o ON o.id = r.offer_id
+          WHERE o.employer_id = $1
+            AND COALESCE(r.payment_status::text, 'pending') = 'pending'
+            AND COALESCE(r.is_approved, FALSE) = FALSE
+        ) AS pending_reports
+    `;
+    const result = await this.query(query, [employerId]);
+    const row = result.rows[0] || {};
+    return {
+      pending_applications: Number(row.pending_applications ?? 0),
+      pending_reports: Number(row.pending_reports ?? 0)
+    };
+  }
+
+  /** Все заявки в статусе pending по задачам заказчика (входящие). */
+  async getEmployerPendingApplications(employerId: string): Promise<any[]> {
+    const query = `
+      SELECT
+        oa.id AS application_id,
+        oa.offer_id,
+        oa.user_id,
+        oa.applied_at,
+        oa.approved_at,
+        oa.status,
+        oa.employer_decision_comment,
+        o.title AS offer_title,
+        o.start_date AS offer_start_date,
+        o.end_date AS offer_end_date,
+        RIGHT(REPLACE(oa.user_id::text, '-', ''), 4) AS executor_suffix,
+        u.name AS executor_name,
+        u.surname AS executor_surname
+      FROM offer_applications oa
+      JOIN offers o ON o.id = oa.offer_id
+      JOIN users u ON u.id = oa.user_id
+      WHERE o.employer_id = $1 AND oa.status = 'pending'
+      ORDER BY oa.applied_at ASC
+    `;
+    const result = await this.query(query, [employerId]);
+    return result.rows.map(
+      (row: {
+        executor_suffix: string;
+        executor_name?: string;
+        executor_surname?: string;
+        [key: string]: unknown;
+      }) => {
+        const { executor_name, executor_surname, executor_suffix, ...rest } = row;
+        return {
+          ...rest,
+          executor_label: formatExecutorMaskLabel(
+            String(executor_suffix ?? ''),
+            executor_name,
+            executor_surname
+          )
+        };
+      }
+    );
+  }
+
+  /** Все отчёты на проверке по задачам заказчика (входящие). */
+  async getEmployerPendingReports(employerId: string): Promise<any[]> {
+    const query = `
+      SELECT
+        r.id,
+        r.offer_id,
+        o.title AS offer_title,
+        r.user_id AS executor_user_id,
+        r.submitted_at,
+        oa.completed_at AS task_completed_at,
+        r.rating,
+        r.comments,
+        r.feedback,
+        r.checklist_answers,
+        r.checklist_schema_version,
+        r.checklist_schema_snapshot,
+        r.photos,
+        r.payment_status,
+        r.is_approved,
+        r.reviewed_at,
+        r.reviewed_by,
+        r.employer_review_comment,
+        RIGHT(REPLACE(r.user_id::text, '-', ''), 4) AS executor_suffix,
+        u_ex.name AS executor_name,
+        u_ex.surname AS executor_surname
+      FROM offer_reports r
+      JOIN offers o ON o.id = r.offer_id
+      JOIN offer_applications oa ON oa.id = r.application_id
+      JOIN users u_ex ON u_ex.id = r.user_id
+      WHERE o.employer_id = $1
+        AND COALESCE(r.payment_status::text, 'pending') = 'pending'
+        AND COALESCE(r.is_approved, FALSE) = FALSE
+      ORDER BY r.submitted_at ASC
+    `;
+    const result = await this.query(query, [employerId]);
     return result.rows.map(
       (row: {
         executor_suffix: string;

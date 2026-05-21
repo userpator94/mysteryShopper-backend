@@ -255,6 +255,7 @@ export interface Application {
 export interface GetAppliesResponse {
   success: true;
   data: Application | Application[];
+  meta?: { cancelled_count?: number };
 }
 
 // Report API types

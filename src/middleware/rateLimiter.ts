@@ -4,13 +4,18 @@ import { Request, Response, NextFunction } from 'express';
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
 
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
-const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per window
+const isProduction = process.env.NODE_ENV === 'production';
+const RATE_LIMIT_MAX_REQUESTS = isProduction ? 100 : 2000;
 
 export const rateLimiter = (
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
+  if (!isProduction) {
+    return next();
+  }
+
   const clientId = req.ip || 'unknown';
   const now = Date.now();
   

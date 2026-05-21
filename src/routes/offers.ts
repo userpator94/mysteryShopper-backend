@@ -10,12 +10,26 @@ import {
 import { patchReportReview } from '../controllers/employerReportReviewController';
 import { getEmployerExecutorProfile } from '../controllers/employerExecutorProfileController';
 import { getMyOfferReport } from '../controllers/executorReportsController';
+import {
+  getEmployerInboxCounts,
+  getEmployerPendingApplications,
+  getEmployerPendingReports
+} from '../controllers/employerInboxController';
 import { authenticateJWT, requireEmployer } from '../middleware/authMiddleware';
 
 const router = Router();
 
 // GET /api/my/offers — только employer (должен быть выше /offers/:id, чтобы "my" не попал в :id)
 router.get('/my/offers', authenticateJWT, requireEmployer, getMyOffers);
+
+router.get('/my/inbox/counts', authenticateJWT, requireEmployer, getEmployerInboxCounts);
+router.get(
+  '/my/inbox/pending-applications',
+  authenticateJWT,
+  requireEmployer,
+  getEmployerPendingApplications
+);
+router.get('/my/inbox/pending-reports', authenticateJWT, requireEmployer, getEmployerPendingReports);
 
 // Просмотр своего отчёта (исполнитель)
 router.get('/offers/:offerId/my-report', authenticateJWT, getMyOfferReport);
