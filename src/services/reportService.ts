@@ -139,10 +139,15 @@ export class ReportService {
 
       const dup = await this.queryWithClient(
         client,
-        'SELECT id FROM offer_reports WHERE application_id = $1 LIMIT 1',
+        `SELECT id, payment_status::text AS payment_status
+         FROM offer_reports WHERE application_id = $1 LIMIT 1`,
         [params.applicationId]
       );
       if (dup.rows.length > 0) {
+        const ps = String(dup.rows[0].payment_status || '').toLowerCase();
+        if (ps === 'rejected') {
+          return this.resubmitExistingReport(client, dup.rows[0].id as string, params);
+        }
         throw new Error('REPORT_ALREADY_EXISTS');
       }
 
@@ -350,6 +355,230 @@ export class ReportService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Повторная отправка отклонённого отчёта (UPDATE существующей строки).
+   */
+  async resubmitExistingReport(
+    client: any,
+    reportId: string,
+    params: {
+      applicationId: string;
+      offerId: string;
+      userId: string;
+      rating: number | null;
+      commentsText: string | null;
+      checklistAnswers: Record<string, unknown> | null;
+      checklistPhotoItemIds: string[] | null;
+      photoFiles: Array<{
+        filename: string;
+        originalname: string;
+        mimetype: string;
+        size: number;
+        buffer: Buffer;
+      }>;
+    }
+  ): Promise<{
+    report_id: string;
+    application_id: string;
+    offer_id: string;
+    user_id: string;
+    rating: number | null;
+    feedback: unknown;
+    photos: string[];
+    submitted_at: Date;
+  }> {
+    const existing = await this.queryWithClient(
+      client,
+      `SELECT id, user_id, payment_status::text AS payment_status
+       FROM offer_reports WHERE id = $1 AND application_id = $2 AND user_id = $3`,
+      [reportId, params.applicationId, params.userId]
+    );
+    if (existing.rows.length === 0) {
+      throw new Error('REPORT_NOT_FOUND');
+    }
+    const ps = String(existing.rows[0].payment_status || '').toLowerCase();
+    if (ps !== 'rejected') {
+      throw new Error('REPORT_ALREADY_EXISTS');
+    }
+
+    const appRes = await this.queryWithClient(
+      client,
+      `SELECT oa.status::text AS status, o.end_date
+       FROM offer_applications oa
+       JOIN offers o ON o.id = oa.offer_id
+       WHERE oa.id = $1 AND oa.user_id = $2 AND oa.offer_id = $3`,
+      [params.applicationId, params.userId, params.offerId]
+    );
+    if (appRes.rows.length === 0) {
+      throw new Error('APPLICATION_NOT_FOUND');
+    }
+    const appStatus = String(appRes.rows[0].status || '').toLowerCase();
+    if (appStatus !== 'approved' && appStatus !== 'in_progress') {
+      throw new Error('APPLICATION_NOT_ELIGIBLE_FOR_REPORT');
+    }
+    const endDate = appRes.rows[0].end_date as Date;
+    if (endDate && new Date(endDate) < new Date()) {
+      throw new Error('REPORT_DEADLINE_PASSED');
+    }
+
+    const offerRes = await this.queryWithClient(
+      client,
+      'SELECT employer_id, checklist_schema, schema_version FROM offers WHERE id = $1',
+      [params.offerId]
+    );
+    if (offerRes.rows.length === 0) {
+      throw new Error('OFFER_NOT_FOUND');
+    }
+    const rawSchema = offerRes.rows[0].checklist_schema;
+    const schemaVersion = Number(offerRes.rows[0].schema_version) || 1;
+
+    const parsed = parseChecklistSchema(rawSchema);
+    if (!parsed.ok) {
+      throw new Error(`SCHEMA_ERROR:${parsed.message}`);
+    }
+    const hasCustomSchema = parsed.schema !== null;
+
+    let rating: number | null = params.rating;
+    let comments: string | null = params.commentsText;
+    let feedbackJson: string;
+    let checklistAnswersJson: string | null = null;
+    let checklistSnapshotJson: string | null = null;
+    let checklistVer: number | null = null;
+    const photoIds: string[] = [];
+
+    if (hasCustomSchema && parsed.schema) {
+      if (!params.checklistAnswers) {
+        throw new Error('CHECKLIST_ANSWERS_REQUIRED');
+      }
+      const v = validateAnswersAgainstSchema(parsed.schema, params.checklistAnswers);
+      if (!v.ok) {
+        throw new Error(`VALIDATION:${v.message}:${v.field || ''}`);
+      }
+      rating = null;
+      comments = null;
+      const photoItemIds = params.checklistPhotoItemIds ?? [];
+      this.validatePhotoTextLinkage(
+        parsed.schema,
+        v.answers as Record<string, unknown>,
+        photoItemIds,
+        params.photoFiles.length
+      );
+
+      const mergedAnswers: Record<string, unknown> = { ...(v.answers as Record<string, unknown>) };
+      for (let i = 0; i < params.photoFiles.length; i++) {
+        const file = params.photoFiles[i];
+        const itemId = photoItemIds[i];
+        const { buffer: buf, mimeType } = await compressReportImage(file.buffer, file.mimetype);
+        const imageId = await this.createImageWithClient(
+          client,
+          file.filename,
+          file.originalname,
+          mimeType,
+          buf.length,
+          buf
+        );
+        photoIds.push(imageId);
+        const base = mergedAnswers[itemId];
+        const baseObj =
+          typeof base === 'object' && base !== null && !Array.isArray(base)
+            ? (base as Record<string, unknown>)
+            : {};
+        mergedAnswers[itemId] = {
+          ...baseObj,
+          photo_url: `/api/images/${imageId}`
+        };
+      }
+
+      checklistAnswersJson = JSON.stringify(mergedAnswers);
+      checklistSnapshotJson = JSON.stringify(parsed.schema);
+      checklistVer = schemaVersion;
+      feedbackJson = JSON.stringify({ mode: 'checklist' });
+    } else {
+      if (rating === null || rating < 1 || rating > 5) {
+        throw new Error('RATING_REQUIRED');
+      }
+      const text = (params.commentsText || '').trim();
+      if (!text) {
+        throw new Error('COMMENT_REQUIRED');
+      }
+      comments = text;
+      feedbackJson = JSON.stringify({ comment: text, mode: 'standard' });
+      if (params.checklistPhotoItemIds && params.checklistPhotoItemIds.length > 0) {
+        throw new Error('VALIDATION:Поле checklist_photo_item_ids допустимо только для отчёта с чек-листом');
+      }
+      if (params.photoFiles.length > 3) {
+        throw new Error('VALIDATION:К стандартному отчёту можно приложить не более 3 фотографий');
+      }
+      for (const file of params.photoFiles) {
+        const { buffer: buf, mimeType } = await compressReportImage(file.buffer, file.mimetype);
+        const imageId = await this.createImageWithClient(
+          client,
+          file.filename,
+          file.originalname,
+          mimeType,
+          buf.length,
+          buf
+        );
+        photoIds.push(imageId);
+      }
+    }
+
+    const updateResult = await this.queryWithClient(
+      client,
+      `UPDATE offer_reports
+       SET rating = $1,
+           comments = $2,
+           feedback = $3,
+           photos = $4::json,
+           checklist_answers = $5::jsonb,
+           checklist_schema_version = $6,
+           checklist_schema_snapshot = $7::jsonb,
+           payment_status = 'pending',
+           is_approved = FALSE,
+           reviewed_at = NULL,
+           reviewed_by = NULL,
+           payment_date = NULL,
+           submitted_at = CURRENT_TIMESTAMP
+       WHERE id = $8
+       RETURNING
+         id as report_id,
+         application_id,
+         offer_id,
+         user_id,
+         rating,
+         feedback,
+         photos,
+         submitted_at`,
+      [
+        rating,
+        comments,
+        feedbackJson,
+        JSON.stringify(photoIds),
+        checklistAnswersJson,
+        checklistVer,
+        checklistSnapshotJson,
+        reportId
+      ]
+    );
+
+    if (updateResult.rows.length === 0) {
+      throw new Error('Ошибка при обновлении отчета');
+    }
+
+    await client.query('COMMIT');
+    const row = updateResult.rows[0];
+    return {
+      report_id: row.report_id,
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      rating: row.rating,
+      feedback: row.feedback,
+      photos: row.photos || [],
+      submitted_at: row.submitted_at
+    };
   }
 
   /**

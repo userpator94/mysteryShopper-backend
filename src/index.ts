@@ -29,6 +29,9 @@ app.use(cors({
 // Compression middleware
 app.use(compression());
 
+// Trust first proxy (nginx) so req.ip reflects real client, not loopback
+app.set('trust proxy', 1);
+
 // Logging middleware
 app.use(
   morgan((tokens, req, res) => {

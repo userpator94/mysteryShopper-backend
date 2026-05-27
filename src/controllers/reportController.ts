@@ -252,6 +252,13 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
       res.status(201).json(response);
     } catch (err: any) {
       const msg = String(err?.message || '');
+      if (msg === 'REPORT_NOT_FOUND') {
+        res.status(404).json({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Отчёт не найден' }
+        } as ApiErrorResponse);
+        return;
+      }
       if (msg === 'REPORT_ALREADY_EXISTS') {
         res.status(409).json({
           success: false,

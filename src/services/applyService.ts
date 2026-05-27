@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
+import { mapReportRowToApiStatus, type ApiReportStatus } from '../utils/reportStatus';
 
 export class ApplyService {
   private pool: Pool;
@@ -17,6 +18,40 @@ export class ApplyService {
     } finally {
       client.release();
     }
+  }
+
+  private mapApplicationRow(row: any) {
+    const has_report = Boolean(row.has_report);
+    let report_status: ApiReportStatus | undefined;
+    let employer_review_comment: string | undefined;
+    let can_resubmit = false;
+
+    if (row.report_payment_status != null && row.report_payment_status !== '') {
+      report_status = mapReportRowToApiStatus({
+        payment_status: row.report_payment_status,
+        is_approved: row.report_is_approved
+      });
+      if (row.report_employer_review_comment) {
+        employer_review_comment = row.report_employer_review_comment;
+      }
+      if (report_status === 'rejected' && row.offer_end_date) {
+        can_resubmit = new Date(row.offer_end_date) >= new Date();
+      }
+    }
+
+    return {
+      application_id: row.application_id,
+      offer_id: row.offer_id,
+      user_id: row.user_id,
+      applied_at: row.applied_at,
+      approved_at: row.approved_at || undefined,
+      status: row.status || undefined,
+      employer_decision_comment: row.employer_decision_comment || undefined,
+      has_report,
+      report_status,
+      employer_review_comment,
+      can_resubmit
+    };
   }
 
   // Проверить существование предложения
@@ -95,23 +130,20 @@ export class ApplyService {
         oa.approved_at,
         oa.status,
         oa.employer_decision_comment,
-        EXISTS (SELECT 1 FROM offer_reports r WHERE r.application_id = oa.id) AS has_report
+        EXISTS (SELECT 1 FROM offer_reports r2 WHERE r2.application_id = oa.id) AS has_report,
+        r.payment_status AS report_payment_status,
+        r.is_approved AS report_is_approved,
+        r.employer_review_comment AS report_employer_review_comment,
+        o.end_date AS offer_end_date
       FROM offer_applications oa
+      JOIN offers o ON o.id = oa.offer_id
+      LEFT JOIN offer_reports r ON r.application_id = oa.id
       WHERE oa.user_id = $1 AND (oa.status IS NULL OR oa.status != 'cancelled')
       ORDER BY oa.applied_at DESC
     `;
     
     const result = await this.query(query, [userId]);
-    return result.rows.map((row: any) => ({
-      application_id: row.application_id,
-      offer_id: row.offer_id,
-      user_id: row.user_id,
-      applied_at: row.applied_at,
-      approved_at: row.approved_at || undefined,
-      status: row.status || undefined,
-      employer_decision_comment: row.employer_decision_comment || undefined,
-      has_report: Boolean(row.has_report)
-    }));
+    return result.rows.map((row: any) => this.mapApplicationRow(row));
   }
 
   // Получить заявку пользователя по offer_id
@@ -125,8 +157,14 @@ export class ApplyService {
         oa.approved_at,
         oa.status,
         oa.employer_decision_comment,
-        EXISTS (SELECT 1 FROM offer_reports r WHERE r.application_id = oa.id) AS has_report
+        EXISTS (SELECT 1 FROM offer_reports r2 WHERE r2.application_id = oa.id) AS has_report,
+        r.payment_status AS report_payment_status,
+        r.is_approved AS report_is_approved,
+        r.employer_review_comment AS report_employer_review_comment,
+        o.end_date AS offer_end_date
       FROM offer_applications oa
+      JOIN offers o ON o.id = oa.offer_id
+      LEFT JOIN offer_reports r ON r.application_id = oa.id
       WHERE oa.user_id = $1 AND oa.offer_id = $2 AND (oa.status IS NULL OR oa.status != 'cancelled')
       ORDER BY oa.applied_at DESC
       LIMIT 1
@@ -138,17 +176,7 @@ export class ApplyService {
       return null;
     }
 
-    const row = result.rows[0];
-    return {
-      application_id: row.application_id,
-      offer_id: row.offer_id,
-      user_id: row.user_id,
-      applied_at: row.applied_at,
-      approved_at: row.approved_at || undefined,
-      status: row.status || undefined,
-      employer_decision_comment: row.employer_decision_comment || undefined,
-      has_report: Boolean(row.has_report)
-    };
+    return this.mapApplicationRow(result.rows[0]);
   }
 
   // Отменить заявку (изменить статус на cancelled)
