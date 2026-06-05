@@ -300,6 +300,13 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
         } as ApiErrorResponse);
         return;
       }
+      if (msg === 'RESUBMIT_ALREADY_USED') {
+        res.status(409).json({
+          success: false,
+          error: { code: 'CONFLICT', message: 'Доработка отчёта уже была использована' }
+        } as ApiErrorResponse);
+        return;
+      }
       if (msg.startsWith('SCHEMA_ERROR:')) {
         res.status(422).json({
           success: false,

@@ -35,9 +35,14 @@ export class ApplyService {
         employer_review_comment = row.report_employer_review_comment;
       }
       if (report_status === 'rejected' && row.offer_end_date) {
-        can_resubmit = new Date(row.offer_end_date) >= new Date();
+        const resubmitUsed = Boolean(row.resubmit_used);
+        can_resubmit =
+          !resubmitUsed && new Date(row.offer_end_date) >= new Date();
       }
     }
+
+    const resubmit_used =
+      row.resubmit_used != null ? Boolean(row.resubmit_used) : undefined;
 
     return {
       application_id: row.application_id,
@@ -50,7 +55,8 @@ export class ApplyService {
       has_report,
       report_status,
       employer_review_comment,
-      can_resubmit
+      can_resubmit,
+      resubmit_used
     };
   }
 
@@ -134,6 +140,7 @@ export class ApplyService {
         r.payment_status AS report_payment_status,
         r.is_approved AS report_is_approved,
         r.employer_review_comment AS report_employer_review_comment,
+        r.resubmit_used AS resubmit_used,
         o.end_date AS offer_end_date
       FROM offer_applications oa
       JOIN offers o ON o.id = oa.offer_id
@@ -161,6 +168,7 @@ export class ApplyService {
         r.payment_status AS report_payment_status,
         r.is_approved AS report_is_approved,
         r.employer_review_comment AS report_employer_review_comment,
+        r.resubmit_used AS resubmit_used,
         o.end_date AS offer_end_date
       FROM offer_applications oa
       JOIN offers o ON o.id = oa.offer_id

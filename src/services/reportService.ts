@@ -391,7 +391,7 @@ export class ReportService {
   }> {
     const existing = await this.queryWithClient(
       client,
-      `SELECT id, user_id, payment_status::text AS payment_status
+      `SELECT id, user_id, payment_status::text AS payment_status, resubmit_used
        FROM offer_reports WHERE id = $1 AND application_id = $2 AND user_id = $3`,
       [reportId, params.applicationId, params.userId]
     );
@@ -401,6 +401,9 @@ export class ReportService {
     const ps = String(existing.rows[0].payment_status || '').toLowerCase();
     if (ps !== 'rejected') {
       throw new Error('REPORT_ALREADY_EXISTS');
+    }
+    if (existing.rows[0].resubmit_used) {
+      throw new Error('RESUBMIT_ALREADY_USED');
     }
 
     const appRes = await this.queryWithClient(
@@ -540,6 +543,7 @@ export class ReportService {
            reviewed_at = NULL,
            reviewed_by = NULL,
            payment_date = NULL,
+           resubmit_used = TRUE,
            submitted_at = CURRENT_TIMESTAMP
        WHERE id = $8
        RETURNING
