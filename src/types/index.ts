@@ -174,11 +174,8 @@ export interface LoginResponse {
 export interface SignupResponse {
   success: true;
   data: {
-    token: string;
-    user: AuthUser & {
-      createdAt?: string;
-    };
-    expiresIn: number;
+    message: string;
+    email: string;
   };
 }
 
@@ -192,6 +189,7 @@ export interface MeResponse {
     phone: string;
     role: UserRole;
     avatar_emoji?: string | null;
+    email_verified?: boolean;
     company?: string;
     description?: string;
     website?: string;

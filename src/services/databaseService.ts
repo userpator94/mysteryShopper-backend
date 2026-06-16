@@ -581,7 +581,8 @@ export class DatabaseService {
         surname,
         is_active,
         role,
-        avatar_id
+        avatar_id,
+        email_verified
       FROM users
       WHERE email = $1
     `;
@@ -1272,6 +1273,55 @@ export class DatabaseService {
       [passwordHash, userId]
     );
     return r.rows.length > 0;
+  }
+
+  async setEmailVerified(userId: string, verified: boolean): Promise<boolean> {
+    const r = await this.query(
+      'UPDATE users SET email_verified = $1, updated_at = NOW() WHERE id = $2 RETURNING id',
+      [verified, userId]
+    );
+    return r.rows.length > 0;
+  }
+
+  async invalidateUserAuthTokens(userId: string, purpose: string): Promise<void> {
+    await this.query(
+      `UPDATE user_auth_tokens SET used_at = NOW()
+       WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL`,
+      [userId, purpose]
+    );
+  }
+
+  async createUserAuthToken(
+    userId: string,
+    tokenHash: string,
+    purpose: string,
+    expiresAt: Date
+  ): Promise<void> {
+    await this.query(
+      `INSERT INTO user_auth_tokens (user_id, token_hash, purpose, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, tokenHash, purpose, expiresAt]
+    );
+  }
+
+  async findActiveAuthToken(
+    tokenHash: string,
+    purpose: string
+  ): Promise<{ id: string; user_id: string; expires_at: Date } | null> {
+    const r = await this.query(
+      `SELECT id, user_id, expires_at FROM user_auth_tokens
+       WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
+      [tokenHash, purpose]
+    );
+    return r.rows[0] || null;
+  }
+
+  async markAuthTokenUsed(tokenId: string): Promise<void> {
+    await this.query(
+      'UPDATE user_auth_tokens SET used_at = NOW() WHERE id = $1',
+      [tokenId]
+    );
   }
 
   // Удалить оффер (или мягкое удаление — is_active = false)

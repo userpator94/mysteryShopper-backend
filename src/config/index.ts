@@ -22,6 +22,13 @@ export const config = {
   rateLimit: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100 // limit each IP to 100 requests per windowMs
+  },
+
+  email: {
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+    frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:5173',
+    enabled: process.env.EMAIL_ENABLED !== 'false'
   }
 };
 

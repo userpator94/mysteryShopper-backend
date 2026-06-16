@@ -3,6 +3,8 @@ import { LoginRequest, SignupRequest, LoginResponse, SignupResponse, LogoutRespo
 import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { dbService } from '../services/databaseService';
 import { authService } from '../services/authService';
+import { issueAuthToken, consumeAuthToken } from '../services/authTokenService';
+import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService';
 import { normalizePhone, formatPhone } from '../utils/validators';
 import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
 
@@ -50,6 +52,19 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         }
       };
       res.status(401).json(response);
+      return;
+    }
+
+    // Проверяем подтверждение email
+    if (!user.email_verified) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'EMAIL_NOT_VERIFIED',
+          message: 'Подтвердите email. Проверьте почту или запросите письмо повторно.'
+        }
+      };
+      res.status(403).json(response);
       return;
     }
 
@@ -166,30 +181,24 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       });
     }
 
-    const authUser: AuthUser = {
-      id: newUser.id,
-      email: newUser.email,
-      name: newUser.name,
-      surname: newUser.lastname,
-      phone: formatPhone(newUser.phone),
-      role: newUser.role as AuthUser['role'],
-      avatar_emoji: newUser.avatar_emoji ?? null
-    };
+    const verifyToken = await issueAuthToken(newUser.id, 'email_verification');
+    try {
+      await sendVerificationEmail({
+        to: newUser.email,
+        name: newUser.name,
+        token: verifyToken
+      });
+    } catch (emailErr) {
+      console.error('Failed to send verification email:', emailErr);
+    }
 
-    const token = authService.generateToken(authUser);
-    const expiresIn = authService.getTokenExpiresIn();
-
-    console.log(`✅ User registered: ${newUser.email} (ID: ${newUser.id}, role: ${role})`);
+    console.log(`✅ User registered (pending email verify): ${newUser.email} (ID: ${newUser.id}, role: ${role})`);
 
     const response: SignupResponse = {
       success: true,
       data: {
-        token,
-        user: {
-          ...authUser,
-          createdAt: newUser.createdAt?.toISOString?.()
-        },
-        expiresIn
+        message: 'Регистрация успешна. Проверьте почту и подтвердите email.',
+        email: newUser.email
       }
     };
 
@@ -256,6 +265,7 @@ export const getMe = async (req: AuthenticatedRequest, res: Response): Promise<v
       email: user.email,
       phone: user.phone ? formatPhone(user.phone) : '',
       role,
+      email_verified: Boolean(user.email_verified),
       avatar_emoji: role === 'user' ? avatarEmojiFromAvatarId(user.avatar_id) : null
     };
     if (role === 'employer') {
@@ -366,6 +376,166 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response): 
           process.env.NODE_ENV === 'development'
             ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
             : 'Внутренняя ошибка сервера'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+const GENERIC_EMAIL_SENT_MESSAGE =
+  'Если аккаунт с таким email существует, мы отправили письмо с инструкциями.';
+
+export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token } = req.body as { token?: string };
+    const consumed = await consumeAuthToken(String(token || ''), 'email_verification');
+    if (!consumed) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'INVALID_OR_EXPIRED_TOKEN',
+          message: 'Ссылка недействительна или истекла. Запросите новое письмо.'
+        }
+      };
+      res.status(400).json(response);
+      return;
+    }
+
+    await dbService.setEmailVerified(consumed.userId, true);
+
+    res.status(200).json({
+      success: true,
+      data: { message: 'Email успешно подтверждён. Теперь вы можете войти.' }
+    });
+  } catch (error: any) {
+    console.error('Error in verifyEmail:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: process.env.NODE_ENV === 'development'
+          ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
+          : 'Внутренняя ошибка сервера'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+export const resendVerification = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body as { email?: string };
+    const user = await dbService.getUserByEmail(String(email || '').trim());
+
+    if (user && user.is_active && !user.email_verified) {
+      const token = await issueAuthToken(user.id, 'email_verification');
+      try {
+        await sendVerificationEmail({
+          to: user.email,
+          name: user.name || '',
+          token
+        });
+      } catch (emailErr) {
+        console.error('Failed to resend verification email:', emailErr);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { message: GENERIC_EMAIL_SENT_MESSAGE }
+    });
+  } catch (error: any) {
+    console.error('Error in resendVerification:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: process.env.NODE_ENV === 'development'
+          ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
+          : 'Внутренняя ошибка сервера'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body as { email?: string };
+    const user = await dbService.getUserByEmail(String(email || '').trim());
+
+    if (user && user.is_active) {
+      const token = await issueAuthToken(user.id, 'password_reset');
+      try {
+        await sendPasswordResetEmail({
+          to: user.email,
+          name: user.name || '',
+          token
+        });
+      } catch (emailErr) {
+        console.error('Failed to send password reset email:', emailErr);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { message: GENERIC_EMAIL_SENT_MESSAGE }
+    });
+  } catch (error: any) {
+    console.error('Error in forgotPassword:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: process.env.NODE_ENV === 'development'
+          ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
+          : 'Внутренняя ошибка сервера'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, new_password } = req.body as { token?: string; new_password?: string };
+    const consumed = await consumeAuthToken(String(token || ''), 'password_reset');
+    if (!consumed) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'INVALID_OR_EXPIRED_TOKEN',
+          message: 'Ссылка недействительна или истекла. Запросите сброс пароля снова.'
+        }
+      };
+      res.status(400).json(response);
+      return;
+    }
+
+    const hashed = await authService.hashPassword(String(new_password || ''));
+    const updated = await dbService.updateUserPasswordHash(consumed.userId, hashed);
+    if (!updated) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Пользователь не найден' }
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { message: 'Пароль успешно изменён. Теперь вы можете войти.' }
+    });
+  } catch (error: any) {
+    console.error('Error in resetPassword:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: process.env.NODE_ENV === 'development'
+          ? `Внутренняя ошибка сервера: ${error?.message || 'Unknown error'}`
+          : 'Внутренняя ошибка сервера'
       }
     };
     res.status(500).json(response);

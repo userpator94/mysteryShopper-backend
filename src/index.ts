@@ -11,9 +11,11 @@ import { notFoundHandler } from './middleware/notFoundHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 import apiRoutes from './routes';
 import { testConnection } from './config/database';
+import { validateProductionEnv } from './config/validateEnv';
 
 // Load environment variables
 dotenv.config();
+validateProductionEnv();
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);

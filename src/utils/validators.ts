@@ -152,6 +152,45 @@ export const changePasswordValidation: ValidationChain[] = [
     })
 ];
 
+const emailOnlyValidation: ValidationChain[] = [
+  body('email')
+    .trim()
+    .notEmpty()
+    .withMessage('Email обязателен')
+    .matches(emailRegex)
+    .withMessage('Неверный формат email')
+];
+
+export const forgotPasswordValidation: ValidationChain[] = [...emailOnlyValidation];
+
+export const resendVerificationValidation: ValidationChain[] = [...emailOnlyValidation];
+
+export const verifyEmailValidation: ValidationChain[] = [
+  body('token')
+    .trim()
+    .notEmpty()
+    .withMessage('Токен обязателен')
+    .isLength({ min: 32, max: 128 })
+    .withMessage('Неверный формат токена')
+];
+
+export const resetPasswordValidation: ValidationChain[] = [
+  body('token')
+    .trim()
+    .notEmpty()
+    .withMessage('Токен обязателен')
+    .isLength({ min: 32, max: 128 })
+    .withMessage('Неверный формат токена'),
+
+  body('new_password')
+    .notEmpty()
+    .withMessage('Новый пароль обязателен')
+    .isLength({ min: 6 })
+    .withMessage('Пароль должен содержать минимум 6 символов')
+    .matches(passwordRegex)
+    .withMessage('Пароль может содержать только латинские буквы, цифры и символы !@#$%^&*()-_=+')
+];
+
 // UUID validation regex
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
