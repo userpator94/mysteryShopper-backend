@@ -12,10 +12,15 @@ import { rateLimiter } from './middleware/rateLimiter';
 import apiRoutes from './routes';
 import { testConnection } from './config/database';
 import { validateProductionEnv } from './config/validateEnv';
+import { config } from './config';
 
 // Load environment variables
 dotenv.config();
 validateProductionEnv();
+
+if (!config.email.requireVerification) {
+  console.warn('⚠️ REQUIRE_EMAIL_VERIFICATION=false — email verification disabled at login');
+}
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);

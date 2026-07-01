@@ -7,6 +7,7 @@ import { issueAuthToken, consumeAuthToken } from '../services/authTokenService';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService';
 import { normalizePhone, formatPhone } from '../utils/validators';
 import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
+import { config } from '../config';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -55,8 +56,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Проверяем подтверждение email
-    if (!user.email_verified) {
+    // Проверяем подтверждение email (можно временно отключить через REQUIRE_EMAIL_VERIFICATION=false)
+    if (config.email.requireVerification && !user.email_verified) {
       const response: ApiErrorResponse = {
         success: false,
         error: {
@@ -181,23 +182,34 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       });
     }
 
-    const verifyToken = await issueAuthToken(newUser.id, 'email_verification');
-    try {
-      await sendVerificationEmail({
-        to: newUser.email,
-        name: newUser.name,
-        token: verifyToken
-      });
-    } catch (emailErr) {
-      console.error('Failed to send verification email:', emailErr);
+    if (!config.email.requireVerification) {
+      await dbService.setEmailVerified(newUser.id, true);
+    } else {
+      const verifyToken = await issueAuthToken(newUser.id, 'email_verification');
+      try {
+        await sendVerificationEmail({
+          to: newUser.email,
+          name: newUser.name,
+          token: verifyToken
+        });
+      } catch (emailErr) {
+        console.error('Failed to send verification email:', emailErr);
+      }
     }
 
-    console.log(`✅ User registered (pending email verify): ${newUser.email} (ID: ${newUser.id}, role: ${role})`);
+    const signupMessage = config.email.requireVerification
+      ? 'Регистрация успешна. Проверьте почту и подтвердите email.'
+      : 'Регистрация успешна.';
+    console.log(
+      config.email.requireVerification
+        ? `✅ User registered (pending email verify): ${newUser.email} (ID: ${newUser.id}, role: ${role})`
+        : `✅ User registered (email verification disabled): ${newUser.email} (ID: ${newUser.id}, role: ${role})`
+    );
 
     const response: SignupResponse = {
       success: true,
       data: {
-        message: 'Регистрация успешна. Проверьте почту и подтвердите email.',
+        message: signupMessage,
         email: newUser.email
       }
     };
