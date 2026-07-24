@@ -123,22 +123,26 @@ async function loadImageDataUrlForPdf(imageId: string): Promise<string | null> {
   return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
+function missingChecklistAnswerPlainText(item: { required?: boolean }): string {
+  return item.required === false ? 'Не указано' : '—';
+}
+
 function checklistAnswerPlainText(
-  item: { type?: string; label?: string; id?: string },
+  item: { type?: string; label?: string; id?: string; required?: boolean },
   v: unknown
 ): string {
-  if (v === undefined || v === null) return '—';
+  if (v === undefined || v === null) return missingChecklistAnswerPlainText(item);
   if (item.type === 'boolean') return v ? 'Да' : 'Нет';
   if (item.type === 'photo_text' && typeof v === 'object' && v !== null) {
     const o = v as Record<string, unknown>;
     const expl = typeof o.explanation === 'string' ? o.explanation.trim() : '';
-    return expl || '—';
+    return expl || missingChecklistAnswerPlainText(item);
   }
   return String(v);
 }
 
 async function buildChecklistItemPdfBlock(
-  item: { id: string; label?: string; type?: string },
+  item: { id: string; label?: string; type?: string; required?: boolean },
   v: unknown,
   baseUrl: string
 ): Promise<{ stack: unknown[] }> {
@@ -173,7 +177,7 @@ async function buildChecklistItemPdfBlock(
         });
       }
     } else if (!expl) {
-      stack.push({ text: '—', margin: [0, 0, 0, 4] });
+      stack.push({ text: missingChecklistAnswerPlainText(item), margin: [0, 0, 0, 4] });
     }
     return { stack };
   }
@@ -200,7 +204,12 @@ export async function buildOfferReportPdfBuffer(row: Record<string, unknown>, ba
   const answers = row.checklist_answers as Record<string, unknown> | null | undefined;
   if (answers && snapshot?.items && Array.isArray(snapshot.items)) {
     content.push({ text: 'Ответы по чек-листу', style: 'subheader' });
-    for (const it of snapshot.items as Array<{ id: string; label?: string; type?: string }>) {
+    for (const it of snapshot.items as Array<{
+      id: string;
+      label?: string;
+      type?: string;
+      required?: boolean;
+    }>) {
       const block = await buildChecklistItemPdfBlock(it, answers[it.id], baseUrl);
       content.push(block);
     }
