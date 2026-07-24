@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { Readable } from 'stream';
+import { AppError } from './errorHandler';
 import { ensureMultipartContentType } from '../utils/reportMultipartHelpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
@@ -40,7 +41,11 @@ function readRequestBuffer(req: Request, limit: number): Promise<Buffer> {
       len += chunk.length;
       if (len > limit) {
         req.resume();
-        reject(new Error('BODY_TOO_LARGE'));
+        const err: AppError = new Error(
+          'Общий размер вложений превышает 15 МБ. Уменьшите размер или количество фото.'
+        );
+        err.statusCode = 413;
+        reject(err);
         return;
       }
       chunks.push(chunk);
