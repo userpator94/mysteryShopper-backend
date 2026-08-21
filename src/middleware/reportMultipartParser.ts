@@ -1,31 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { Readable } from 'stream';
+import busboy from 'busboy';
 import { AppError } from './errorHandler';
 import { ensureMultipartContentType } from '../utils/reportMultipartHelpers';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const appendField = require('append-field') as (store: Record<string, unknown>, key: string, value: string) => void;
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-const Busboy = require('busboy') as (cfg: {
-  headers: Record<string, unknown>;
-  limits?: Record<string, number>;
-}) => BusboyInstance;
-
-type BusboyInstance = NodeJS.WritableStream & {
-  destroy(error?: Error): void;
-  on(event: 'field', listener: (name: string, value: string) => void): BusboyInstance;
-  on(
-    event: 'file',
-    listener: (
-      name: string,
-      file: NodeJS.ReadableStream,
-      info: { filename?: string; encoding: string; mimeType?: string }
-    ) => void
-  ): BusboyInstance;
-  on(event: 'error', listener: (err: Error) => void): BusboyInstance;
-  on(event: 'close', listener: () => void): BusboyInstance;
-};
 
 const MAX_BODY = 15 * 1024 * 1024;
 const MAX_FILE = 10 * 1024 * 1024;
@@ -66,15 +45,15 @@ export function parseReportMultipart(req: Request, res: Response, next: NextFunc
 
       if (buf.length === 0) {
         req.body = Object.create(null);
-        (req as Request & { files?: Express.Multer.File[] }).files = [];
+        req.files = [];
         next();
         return;
       }
 
       ensureMultipartContentType(req, buf);
 
-      const bb = Busboy({
-        headers: req.headers as Record<string, unknown>,
+      const bb = busboy({
+        headers: req.headers,
         limits: {
           fileSize: MAX_FILE,
           files: MAX_FILES,
@@ -84,7 +63,7 @@ export function parseReportMultipart(req: Request, res: Response, next: NextFunc
       });
 
       req.body = Object.create(null);
-      const files: Express.Multer.File[] = [];
+      const files: Express.UploadedFile[] = [];
       let pendingFileWrites = 0;
       let busboyClosed = false;
       let finished = false;
@@ -96,7 +75,7 @@ export function parseReportMultipart(req: Request, res: Response, next: NextFunc
           next(err);
           return;
         }
-        (req as Request & { files: Express.Multer.File[] }).files = files;
+        req.files = files;
         next();
       };
 
@@ -143,12 +122,8 @@ export function parseReportMultipart(req: Request, res: Response, next: NextFunc
               encoding: info.encoding,
               mimetype: mime,
               size: buffer.length,
-              buffer,
-              destination: '',
-              filename: '',
-              path: '',
-              stream: Readable.from(buffer)
-            } as Express.Multer.File);
+              buffer
+            });
           } finally {
             pendingFileWrites--;
             tryDone();

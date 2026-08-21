@@ -3,7 +3,6 @@ import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { ApiErrorResponse, ReportResponse } from '../types';
 import { reportService } from '../services/reportService';
 import { dbService } from '../services/databaseService';
-import fs from 'fs';
 import { multipartTextField } from '../utils/multipartBodyFields';
 
 export const createReport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -144,22 +143,12 @@ export const createReport = async (req: AuthenticatedRequest, res: Response): Pr
       buffer: Buffer;
     }> = [];
 
-    const files = req.files;
-    const fileArray: Express.Multer.File[] = Array.isArray(files)
-      ? files
-      : files
-        ? Object.values(files).flat()
-        : [];
+    const fileArray = Array.isArray(req.files) ? req.files : [];
 
     if (fileArray.length > 0) {
       for (const file of fileArray) {
-        let buffer: Buffer;
-        if (file.buffer) {
-          buffer = file.buffer;
-        } else if (file.path) {
-          buffer = fs.readFileSync(file.path);
-          fs.unlinkSync(file.path);
-        } else {
+        const buffer = file.buffer;
+        if (!buffer) {
           continue;
         }
 
