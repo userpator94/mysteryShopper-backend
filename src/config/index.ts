@@ -29,7 +29,7 @@ export const config = {
     from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
     frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:5173',
     enabled: process.env.EMAIL_ENABLED !== 'false',
-    requireVerification: process.env.REQUIRE_EMAIL_VERIFICATION !== 'false'
+    requireVerification: true
   }
 };
 
