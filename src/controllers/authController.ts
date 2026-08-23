@@ -4,7 +4,7 @@ import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { dbService } from '../services/databaseService';
 import { authService } from '../services/authService';
 import { issueAuthToken, consumeAuthToken } from '../services/authTokenService';
-import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService';
+import { sendVerificationEmail, sendPasswordResetEmail, sendPasswordChangedEmail } from '../services/emailService';
 import { normalizePhone, formatPhone } from '../utils/validators';
 import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
 import { config } from '../config';
@@ -374,6 +374,15 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
+    try {
+      await sendPasswordChangedEmail({
+        to: user.email,
+        name: user.name || ''
+      });
+    } catch (emailErr) {
+      console.error('Failed to send password-changed email:', emailErr);
+    }
+
     res.status(200).json({
       success: true,
       data: { message: 'Пароль успешно обновлён' }
@@ -533,6 +542,18 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       };
       res.status(404).json(response);
       return;
+    }
+
+    const account = await dbService.getUserEmailNameById(consumed.userId);
+    if (account?.email) {
+      try {
+        await sendPasswordChangedEmail({
+          to: account.email,
+          name: account.name || ''
+        });
+      } catch (emailErr) {
+        console.error('Failed to send password-changed email:', emailErr);
+      }
     }
 
     res.status(200).json({

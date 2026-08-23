@@ -1,6 +1,8 @@
 import { Resend } from 'resend';
 import { config } from '../config';
 import {
+  passwordChangedEmailHtml,
+  passwordChangedEmailText,
   passwordResetEmailHtml,
   passwordResetEmailText,
   verificationEmailHtml,
@@ -49,6 +51,19 @@ export async function sendPasswordResetEmail(params: {
     subject: 'Сброс пароля — Mystery Shopper',
     html: passwordResetEmailHtml({ resetUrl, name: params.name }),
     text: passwordResetEmailText({ resetUrl, name: params.name })
+  });
+}
+
+export async function sendPasswordChangedEmail(params: {
+  to: string;
+  name: string;
+}): Promise<void> {
+  const loginUrl = buildFrontendUrl('/login');
+  await sendEmail({
+    to: params.to,
+    subject: 'Пароль изменён — Mystery Shopper',
+    html: passwordChangedEmailHtml({ loginUrl, name: params.name }),
+    text: passwordChangedEmailText({ loginUrl, name: params.name })
   });
 }
 

@@ -1,7 +1,5 @@
 import { body, ValidationChain } from 'express-validator';
-
-// Email validation regex: only latin letters, numbers, and symbols ._-@
-const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+import { isValidEmailFormat } from './emailFormat';
 
 // Password validation regex: latin letters, numbers, and symbols !@#$%^&*()-_=+
 const passwordRegex = /^[a-zA-Z0-9!@#$%^&*()\-_=+]+$/;
@@ -32,21 +30,21 @@ export const validatePhoneDigits = (phone: string): boolean => {
   return digits.length === 11 && digits.startsWith('7');
 };
 
-export const loginValidation: ValidationChain[] = [
+const emailBodyValidation: ValidationChain[] = [
   body('email')
     .trim()
     .notEmpty()
     .withMessage('Email обязателен')
-    .matches(emailRegex)
-    .withMessage('Неверный формат email')
     .custom((value) => {
-      // Check for only latin letters, numbers, and allowed symbols
-      const localPart = value.split('@')[0];
-      if (!/^[a-zA-Z0-9._-]+$/.test(localPart)) {
-        throw new Error('Email может содержать только латинские буквы, цифры и символы ._-@');
+      if (!isValidEmailFormat(String(value))) {
+        throw new Error('Неверный формат email');
       }
       return true;
-    }),
+    })
+];
+
+export const loginValidation: ValidationChain[] = [
+  ...emailBodyValidation,
 
   body('password')
     .notEmpty()
@@ -72,19 +70,7 @@ export const signupValidation: ValidationChain[] = [
     .matches(nameRegex)
     .withMessage('Фамилия может содержать только латинские и кириллические буквы, пробелы и дефисы'),
 
-  body('email')
-    .trim()
-    .notEmpty()
-    .withMessage('Email обязателен')
-    .matches(emailRegex)
-    .withMessage('Неверный формат email')
-    .custom((value) => {
-      const localPart = value.split('@')[0];
-      if (!/^[a-zA-Z0-9._-]+$/.test(localPart)) {
-        throw new Error('Email может содержать только латинские буквы, цифры и символы ._-@');
-      }
-      return true;
-    }),
+  ...emailBodyValidation,
 
   body('phone')
     .trim()
@@ -152,18 +138,9 @@ export const changePasswordValidation: ValidationChain[] = [
     })
 ];
 
-const emailOnlyValidation: ValidationChain[] = [
-  body('email')
-    .trim()
-    .notEmpty()
-    .withMessage('Email обязателен')
-    .matches(emailRegex)
-    .withMessage('Неверный формат email')
-];
+export const forgotPasswordValidation: ValidationChain[] = [...emailBodyValidation];
 
-export const forgotPasswordValidation: ValidationChain[] = [...emailOnlyValidation];
-
-export const resendVerificationValidation: ValidationChain[] = [...emailOnlyValidation];
+export const resendVerificationValidation: ValidationChain[] = [...emailBodyValidation];
 
 export const verifyEmailValidation: ValidationChain[] = [
   body('token')

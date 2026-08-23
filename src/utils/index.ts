@@ -18,10 +18,7 @@ export const generateId = (): string => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
-export const validateEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
+export { isValidEmailFormat as validateEmail } from './emailFormat';
 
 export const sanitizeString = (str: string): string => {
   return str.trim().replace(/[<>]/g, '');

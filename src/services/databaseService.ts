@@ -598,6 +598,14 @@ export class DatabaseService {
     return result.rows[0] || null;
   }
 
+  async getUserEmailNameById(userId: string): Promise<{ email: string; name: string } | null> {
+    const result = await this.query(
+      'SELECT email, name FROM users WHERE id = $1',
+      [userId]
+    );
+    return result.rows[0] || null;
+  }
+
   // Проверить существование email
   async isEmailExists(email: string): Promise<boolean> {
     const query = `

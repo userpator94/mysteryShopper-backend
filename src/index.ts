@@ -1,9 +1,9 @@
+import './loadEnv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
-import dotenv from 'dotenv';
 import path from 'path';
 
 import { errorHandler } from './middleware/errorHandler';
@@ -14,8 +14,6 @@ import { testConnection } from './config/database';
 import { validateProductionEnv } from './config/validateEnv';
 import { config } from './config';
 
-// Load environment variables
-dotenv.config();
 validateProductionEnv();
 
 if (!config.email.requireVerification) {
