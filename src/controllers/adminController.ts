@@ -79,7 +79,10 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
       avatar_emoji: null
     };
 
-    const token = authService.generateToken(authUser);
+    const token = authService.generateToken(
+      authUser,
+      typeof user.token_version === 'number' ? user.token_version : 0
+    );
     const expiresIn = authService.getTokenExpiresIn();
 
     console.log(`✅ Admin logged in: ${user.email} (ID: ${user.id})`);

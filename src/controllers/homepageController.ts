@@ -208,7 +208,7 @@ export const getPromoOffers = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const getImageById = async (req: Request, res: Response): Promise<void> => {
+export const getImageById = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -216,11 +216,11 @@ export const getImageById = async (req: Request, res: Response): Promise<void> =
       const response: ApiResponse = {
         success: false,
         error: {
-          message: 'Image ID is required',
-          statusCode: 400
+          message: 'Image not found',
+          statusCode: 404
         }
       };
-      res.status(400).json(response);
+      res.status(404).json(response);
       return;
     }
 
@@ -236,6 +236,35 @@ export const getImageById = async (req: Request, res: Response): Promise<void> =
       };
       res.status(404).json(response);
       return;
+    }
+
+    const imageType = String(image.type || '');
+    if (imageType === 'report') {
+      const userId = req.userId;
+      const role = req.userRole || 'user';
+      if (!userId) {
+        const response: ApiResponse = {
+          success: false,
+          error: {
+            message: 'Image not found',
+            statusCode: 404
+          }
+        };
+        res.status(404).json(response);
+        return;
+      }
+      const allowed = await dbService.canUserAccessReportImage(id, userId, role);
+      if (!allowed) {
+        const response: ApiResponse = {
+          success: false,
+          error: {
+            message: 'Image not found',
+            statusCode: 404
+          }
+        };
+        res.status(404).json(response);
+        return;
+      }
     }
 
     const wantJson = req.query.format === 'json';

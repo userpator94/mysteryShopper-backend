@@ -431,6 +431,42 @@ export class DatabaseService {
     return result.rows[0] || null;
   }
 
+  /**
+   * Может ли пользователь читать report-изображение:
+   * автор отчёта, заказчик оффера (employers.user_id) или admin.
+   */
+  async canUserAccessReportImage(
+    imageId: string,
+    userId: string,
+    role: string
+  ): Promise<boolean> {
+    if (role === 'admin') {
+      const exists = await this.query(
+        'SELECT 1 FROM images WHERE id = $1 AND is_active = TRUE AND type = $2 LIMIT 1',
+        [imageId, 'report']
+      );
+      return exists.rows.length > 0;
+    }
+
+    const query = `
+      SELECT 1
+      FROM offer_reports r
+      LEFT JOIN employers e ON e.id = r.employer_id
+      WHERE (
+        (jsonb_typeof(COALESCE(r.photos, '[]'::json)::jsonb) = 'array'
+          AND COALESCE(r.photos, '[]'::json)::jsonb @> to_jsonb(ARRAY[$1::text]))
+        OR COALESCE(r.checklist_answers::text, '') LIKE '%' || $1::text || '%'
+      )
+      AND (
+        r.user_id = $2::uuid
+        OR e.user_id = $2::uuid
+      )
+      LIMIT 1
+    `;
+    const result = await this.query(query, [imageId, userId]);
+    return result.rows.length > 0;
+  }
+
   // Получить баннер
   async getBanner(): Promise<any | null> {
     const query = `
@@ -582,7 +618,8 @@ export class DatabaseService {
         is_active,
         role,
         avatar_id,
-        email_verified
+        email_verified,
+        COALESCE(token_version, 0) AS token_version
       FROM users
       WHERE email = $1
     `;
@@ -592,10 +629,25 @@ export class DatabaseService {
   }
 
   // Получить пользователя по id (для проверки роли по БД, не по JWT)
-  async getUserById(userId: string): Promise<{ id: string; role: string; is_active: boolean } | null> {
-    const query = 'SELECT id, role, is_active FROM users WHERE id = $1';
+  async getUserById(
+    userId: string
+  ): Promise<{ id: string; role: string; is_active: boolean; token_version: number } | null> {
+    const query =
+      'SELECT id, role, is_active, COALESCE(token_version, 0) AS token_version FROM users WHERE id = $1';
     const result = await this.query(query, [userId]);
     return result.rows[0] || null;
+  }
+
+  /** Инвалидирует все JWT пользователя (logout / смена пароля). */
+  async bumpUserTokenVersion(userId: string): Promise<boolean> {
+    const r = await this.query(
+      `UPDATE users
+       SET token_version = COALESCE(token_version, 0) + 1, updated_at = NOW()
+       WHERE id = $1
+       RETURNING id`,
+      [userId]
+    );
+    return r.rows.length > 0;
   }
 
   async getUserEmailNameById(userId: string): Promise<{ email: string; name: string } | null> {

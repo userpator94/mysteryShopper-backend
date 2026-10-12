@@ -15,12 +15,13 @@ export class AuthService {
     return bcrypt.compare(password, hash);
   }
 
-  // Генерация JWT токена (в payload: user_id, email, role для проверки прав)
-  generateToken(user: AuthUser): string {
+  // Генерация JWT токена (в payload: user_id, email, role, tv для revocation)
+  generateToken(user: AuthUser, tokenVersion = 0): string {
     const payload = {
       user_id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tv: tokenVersion
     };
 
     return jwt.sign(payload, config.jwt.secret, {

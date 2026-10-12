@@ -11,7 +11,8 @@ router.get('/banner', getBanner);
 router.get('/offers', authenticateJWTOptional, getOffers);
 router.get('/promo-offers', getPromoOffers);
 router.get('/authors/:id', getAuthorById);
-router.get('/images/:id', getImageById);
+// Report BYTEA — только с JWT и ACL (см. getImageById)
+router.get('/images/:id', authenticateJWT, getImageById);
 
 // Защищенный эндпоинт (требует JWT токен)
 router.get('/offers/:id', authenticateJWT, getOfferById);

@@ -17,35 +17,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     // Получаем пользователя по email
     const user = await dbService.getUserByEmail(email);
 
-    if (!user) {
-      const response: ApiErrorResponse = {
-        success: false,
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'Пользователь с таким email не найден'
-        }
-      };
-      res.status(404).json(response);
-      return;
-    }
-
-    // Проверяем активность пользователя
-    if (!user.is_active) {
-      const response: ApiErrorResponse = {
-        success: false,
-        error: {
-          code: 'USER_NOT_ACTIVE',
-          message: 'Пользователь неактивен'
-        }
-      };
-      res.status(401).json(response);
-      return;
-    }
-
-    // Проверяем пароль
-    const isPasswordValid = await authService.comparePassword(password, user.password_hash);
-    
-    if (!isPasswordValid) {
+    // Единый ответ — без enumeration (нет пользователя / неактивен / неверный пароль)
+    const invalidCredentials = (): void => {
       const response: ApiErrorResponse = {
         success: false,
         error: {
@@ -54,6 +27,18 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         }
       };
       res.status(401).json(response);
+    };
+
+    if (!user || !user.is_active) {
+      invalidCredentials();
+      return;
+    }
+
+    // Проверяем пароль
+    const isPasswordValid = await authService.comparePassword(password, user.password_hash);
+    
+    if (!isPasswordValid) {
+      invalidCredentials();
       return;
     }
 
@@ -81,8 +66,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       avatar_emoji: role === 'user' ? avatarEmojiFromAvatarId(user.avatar_id) : null
     };
 
-    // Генерируем JWT токен
-    const token = authService.generateToken(authUser);
+    // Генерируем JWT токен (tv = token_version для revocation)
+    const token = authService.generateToken(
+      authUser,
+      typeof user.token_version === 'number' ? user.token_version : 0
+    );
     const expiresIn = authService.getTokenExpiresIn();
 
     // Логируем успешный вход (без пароля)
@@ -309,6 +297,8 @@ export const logout = async (req: AuthenticatedRequest, res: Response): Promise<
     const userId = req.userId!;
     const userEmail = req.userEmail;
 
+    await dbService.bumpUserTokenVersion(userId);
+
     // Логируем выход пользователя
     console.log(`🚪 User logged out: ${userEmail || 'unknown'} (ID: ${userId})`);
 
@@ -374,6 +364,8 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response): 
       res.status(404).json(response);
       return;
     }
+
+    await dbService.bumpUserTokenVersion(userId);
 
     try {
       await sendPasswordChangedEmail({
@@ -544,6 +536,8 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       res.status(404).json(response);
       return;
     }
+
+    await dbService.bumpUserTokenVersion(consumed.userId);
 
     const account = await dbService.getUserEmailNameById(consumed.userId);
     if (account?.email) {

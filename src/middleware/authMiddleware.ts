@@ -8,6 +8,8 @@ export interface JWTPayload {
   user_id: string;
   email?: string;
   role?: string;
+  /** token_version из users — для revocation на logout / смене пароля */
+  tv?: number;
   iat?: number;
   exp?: number;
 }
@@ -15,13 +17,13 @@ export interface JWTPayload {
 /**
  * Middleware для аутентификации по JWT токену
  * Извлекает токен из заголовка Authorization: Bearer <token>
- * Верифицирует токен и добавляет userId в request
+ * Верифицирует токен, проверяет is_active и token_version в БД
  */
-export const authenticateJWT = (
+export const authenticateJWT = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   try {
     // Получаем токен из заголовка Authorization
     const authHeader = req.headers.authorization;
@@ -61,6 +63,33 @@ export const authenticateJWT = (
       
       // Проверяем наличие user_id в токене
       if (!decoded.user_id) {
+        const response: ApiErrorResponse = {
+          success: false,
+          error: {
+            code: 'INVALID_TOKEN',
+            message: 'Неверный или истекший токен'
+          }
+        };
+        res.status(401).json(response);
+        return;
+      }
+
+      const user = await dbService.getUserById(decoded.user_id);
+      if (!user || !user.is_active) {
+        const response: ApiErrorResponse = {
+          success: false,
+          error: {
+            code: 'INVALID_TOKEN',
+            message: 'Неверный или истекший токен'
+          }
+        };
+        res.status(401).json(response);
+        return;
+      }
+
+      const tokenTv = typeof decoded.tv === 'number' ? decoded.tv : 0;
+      const dbTv = typeof user.token_version === 'number' ? user.token_version : 0;
+      if (tokenTv !== dbTv) {
         const response: ApiErrorResponse = {
           success: false,
           error: {
