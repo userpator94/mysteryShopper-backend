@@ -55,6 +55,19 @@ export const loginValidation: ValidationChain[] = [
     .withMessage('Пароль может содержать только латинские буквы, цифры и символы !@#$%^&*()-_=+')
 ];
 
+/** Admin login: без жёсткого charset (пароль мог быть задан вне signup-правил). */
+export const adminLoginValidation: ValidationChain[] = [
+  ...emailBodyValidation,
+
+  body('password')
+    .notEmpty()
+    .withMessage('Пароль обязателен')
+    .isLength({ min: 6 })
+    .withMessage('Пароль должен содержать минимум 6 символов')
+    .isLength({ max: 200 })
+    .withMessage('Пароль слишком длинный')
+];
+
 export const signupValidation: ValidationChain[] = [
   body('name')
     .trim()

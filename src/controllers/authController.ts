@@ -7,6 +7,7 @@ import { issueAuthToken, consumeAuthToken } from '../services/authTokenService';
 import { sendVerificationEmail, sendPasswordResetEmail, sendPasswordChangedEmail } from '../services/emailService';
 import { normalizePhone, formatPhone } from '../utils/validators';
 import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
+import { normalizeAuthRole } from '../utils/authRole';
 import { config } from '../config';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
@@ -69,7 +70,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const role = (user.role === 'employer' ? 'employer' : 'user') as AuthUser['role'];
+    const role = normalizeAuthRole(user.role);
     const authUser: AuthUser = {
       id: user.id,
       email: user.email,
@@ -85,7 +86,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const expiresIn = authService.getTokenExpiresIn();
 
     // Логируем успешный вход (без пароля)
-    console.log(`✅ User logged in: ${user.email} (ID: ${user.id})`);
+    console.log(`✅ User logged in: ${user.email} (ID: ${user.id}, role: ${role})`);
 
     const response: LoginResponse = {
       success: true,
@@ -269,7 +270,7 @@ export const getMe = async (req: AuthenticatedRequest, res: Response): Promise<v
       res.status(404).json(response);
       return;
     }
-    const role = (user.role === 'employer' ? 'employer' : 'user') as 'user' | 'employer';
+    const role = normalizeAuthRole(user.role);
     const data: MeResponse['data'] = {
       id: user.id,
       name: user.name || '',

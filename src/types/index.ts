@@ -137,7 +137,7 @@ export interface LoginRequest {
   password: string;
 }
 
-export type UserRole = 'user' | 'employer';
+export type UserRole = 'user' | 'employer' | 'admin';
 
 export interface SignupRequest {
   name: string;

@@ -10,6 +10,7 @@ import appliesRoutes from './applies';
 import applicationsRoutes from './applications';
 import reportRoutes from './report';
 import rewardsRoutes from './rewards';
+import adminRoutes from './admin';
 
 const router = Router();
 
@@ -81,6 +82,9 @@ router.use('/applications', applicationsRoutes);
 
 // Report routes
 router.use('/report', reportRoutes);
+
+// Admin panel — до rewards: rewards раньше глушил чужие пути глобальным JWT
+router.use('/admin', adminRoutes);
 
 // Rewards (executor)
 router.use('/', rewardsRoutes);

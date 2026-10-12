@@ -237,3 +237,76 @@ export const requireEmployer = async (
   }
 };
 
+/**
+ * Middleware: доступ только для роли admin.
+ * Роль из JWT сверяется с users.role в БД.
+ */
+export const requireAdmin = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.userId!;
+    const tokenRole = req.userRole;
+
+    const user = await dbService.getUserById(userId);
+    if (!user) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Пользователь не найден'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+    if (!user.is_active) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Пользователь неактивен'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+    if (user.role !== 'admin') {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Доступ запрещён'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+    if (tokenRole !== undefined && tokenRole !== 'admin') {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Роль в токене не совпадает с ролью в базе данных'
+        }
+      };
+      res.status(403).json(response);
+      return;
+    }
+
+    next();
+  } catch (error: any) {
+    console.error('Error in requireAdmin:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: 'Ошибка при проверке прав'
+      }
+    };
+    res.status(500).json(response);
+  }
+};
+

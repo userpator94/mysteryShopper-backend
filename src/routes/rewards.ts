@@ -10,7 +10,11 @@ import type { ApiErrorResponse } from '../types';
 
 const router = Router();
 
-router.use(authenticateJWT);
+// Только пути rewards/withdraw — нельзя вешать authenticateJWT на весь router,
+// иначе при mount на `/` перехватываются все последующие маршруты (в т.ч. /admin/login).
+router.use('/me/rewards', authenticateJWT);
+router.use('/me/withdraw-details', authenticateJWT);
+router.use('/me/withdraw-requests', authenticateJWT);
 
 async function requireExecutor(
   userId: string,
