@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
+import { withdrawRequestsService } from './withdrawRequestsService';
 
 export type RewardRow = {
   id: string;
@@ -70,7 +71,9 @@ export class RewardsService {
     `;
     const base = await this.pool.query(q, [userId]);
     const total_earned = Number(base.rows[0]?.total_earned ?? 0);
-    const balance = Number(base.rows[0]?.balance ?? 0);
+    const earnedApproved = Number(base.rows[0]?.balance ?? 0);
+    const reservedWithdrawals = await withdrawRequestsService.sumReservedAmount(userId);
+    const balance = Math.max(0, earnedApproved - reservedWithdrawals);
     const total_count = Number(base.rows[0]?.total_count ?? 0);
 
     const byKindRes = await this.pool.query(

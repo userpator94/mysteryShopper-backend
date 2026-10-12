@@ -218,3 +218,114 @@ export const reportValidation: ValidationChain[] = [
       return true;
     })
 ];
+
+/** Реквизиты для вывода Рэшек (PUT /me/withdraw-details). */
+export const withdrawDetailsValidation: ValidationChain[] = [
+  body('method')
+    .trim()
+    .notEmpty()
+    .withMessage('Способ вывода обязателен')
+    .isIn(['bank_account', 'phone', 'card'])
+    .withMessage('Способ вывода: bank_account, phone или card'),
+
+  body('last_name')
+    .trim()
+    .notEmpty()
+    .withMessage('Фамилия обязательна')
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Фамилия: не более 100 символов')
+    .matches(nameRegex)
+    .withMessage('Фамилия может содержать только буквы, пробелы и дефисы'),
+
+  body('first_name')
+    .trim()
+    .notEmpty()
+    .withMessage('Имя обязательно')
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Имя: не более 100 символов')
+    .matches(nameRegex)
+    .withMessage('Имя может содержать только буквы, пробелы и дефисы'),
+
+  body('middle_name')
+    .optional({ nullable: true, checkFalsy: true })
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Отчество: не более 100 символов')
+    .matches(nameRegex)
+    .withMessage('Отчество может содержать только буквы, пробелы и дефисы'),
+
+  body('account_number')
+    .if(body('method').equals('bank_account'))
+    .trim()
+    .notEmpty()
+    .withMessage('Номер счёта обязателен')
+    .custom((value) => {
+      const digits = String(value ?? '').replace(/\D/g, '');
+      if (digits.length !== 20) throw new Error('Номер счёта должен содержать ровно 20 цифр');
+      return true;
+    }),
+
+  body('bik')
+    .if(body('method').equals('bank_account'))
+    .trim()
+    .notEmpty()
+    .withMessage('БИК обязателен')
+    .custom((value) => {
+      const digits = String(value ?? '').replace(/\D/g, '');
+      if (digits.length !== 9) throw new Error('БИК должен содержать ровно 9 цифр');
+      return true;
+    }),
+
+  body('bank_name')
+    .if(body('method').equals('phone'))
+    .trim()
+    .notEmpty()
+    .withMessage('Укажите банк для перевода по телефону')
+    .isLength({ max: 200 })
+    .withMessage('Название банка: не более 200 символов'),
+
+  body('bank_name')
+    .if(body('method').equals('bank_account'))
+    .optional({ nullable: true, checkFalsy: true })
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage('Название банка: не более 200 символов'),
+
+  body('phone')
+    .if(body('method').equals('phone'))
+    .trim()
+    .notEmpty()
+    .withMessage('Номер телефона обязателен')
+    .custom((value) => {
+      if (!validatePhoneDigits(String(value ?? ''))) {
+        throw new Error('Телефон должен быть в формате +7 (XXX) XXX-XX-XX');
+      }
+      return true;
+    }),
+
+  body('card_number')
+    .if(body('method').equals('card'))
+    .trim()
+    .notEmpty()
+    .withMessage('Номер карты обязателен')
+    .custom((value) => {
+      const digits = String(value ?? '').replace(/\D/g, '');
+      if (digits.length !== 16) {
+        throw new Error('Номер карты должен содержать ровно 16 цифр');
+      }
+      return true;
+    }),
+];
+
+/** Минимальная сумма вывода Рэшек. */
+export const MIN_WITHDRAW_AMOUNT = 2000;
+
+/** Создание заявки на вывод (POST /me/withdraw-requests). */
+export const withdrawRequestValidation: ValidationChain[] = [
+  body('amount')
+    .notEmpty()
+    .withMessage('Сумма обязательна')
+    .isInt({ min: MIN_WITHDRAW_AMOUNT })
+    .withMessage(`Минимальная сумма вывода — ${MIN_WITHDRAW_AMOUNT} Рэшек`)
+    .toInt(),
+];

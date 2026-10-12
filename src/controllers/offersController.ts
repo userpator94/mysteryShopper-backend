@@ -41,6 +41,50 @@ function normalizeMaxParticipantsPatch(raw: unknown): { ok: true; value: number 
   };
 }
 
+const LOCATION_MAX_LEN = 255;
+const LOCATION_NOTE_MAX_LEN = 300;
+
+/** Адрес и опциональная пометка (до 300 символов); пометка только при непустом адресе. */
+function parseLocationFields(
+  locationRaw: unknown,
+  noteRaw: unknown,
+  opts: { noteProvided: boolean }
+):
+  | { ok: true; location: string | null; location_note: string | null | undefined }
+  | { ok: false; message: string } {
+  let location: string | null = null;
+  if (typeof locationRaw === 'string') {
+    location = locationRaw.trim() || null;
+  } else if (locationRaw === null) {
+    location = null;
+  } else if (locationRaw !== undefined) {
+    return { ok: false, message: 'location: ожидается строка' };
+  }
+  if (location != null && location.length > LOCATION_MAX_LEN) {
+    return { ok: false, message: `location: не более ${LOCATION_MAX_LEN} символов` };
+  }
+
+  if (!opts.noteProvided) {
+    return { ok: true, location, location_note: undefined };
+  }
+
+  let location_note: string | null = null;
+  if (typeof noteRaw === 'string') {
+    location_note = noteRaw.trim() || null;
+  } else if (noteRaw === null) {
+    location_note = null;
+  } else if (noteRaw !== undefined) {
+    return { ok: false, message: 'location_note: ожидается строка' };
+  }
+  if (location_note != null && location_note.length > LOCATION_NOTE_MAX_LEN) {
+    return { ok: false, message: `location_note: не более ${LOCATION_NOTE_MAX_LEN} символов` };
+  }
+  if (location_note && !location) {
+    return { ok: false, message: 'location_note можно указать только вместе с адресом (location)' };
+  }
+  return { ok: true, location, location_note };
+}
+
 export const createOffer = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const employerId = req.employerId!;
@@ -128,12 +172,24 @@ export const createOffer = async (req: AuthenticatedRequest, res: Response): Pro
       location_points = lp.points;
     }
 
+    const locParsed = parseLocationFields(raw.location, raw.location_note, {
+      noteProvided: raw.location_note !== undefined
+    });
+    if (!locParsed.ok) {
+      res.status(422).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: locParsed.message }
+      } as ApiErrorResponse);
+      return;
+    }
+
     const offer = await dbService.createOffer({
       employer_id: employerId,
       title,
       description: typeof raw.description === 'string' ? raw.description.trim() : undefined,
       price: priceNumber,
-      location: typeof raw.location === 'string' ? raw.location.trim() : undefined,
+      location: locParsed.location ?? undefined,
+      location_note: locParsed.location_note === undefined ? undefined : locParsed.location_note,
       location_points,
       requirements: typeof raw.requirements === 'string' ? raw.requirements.trim() : undefined,
       tags: tags.length ? tags : undefined,
@@ -238,7 +294,7 @@ export const updateOffer = async (req: AuthenticatedRequest, res: Response): Pro
     }
 
     const allowed: (keyof typeof body)[] = [
-      'title', 'description', 'price', 'location', 'requirements', 'tags',
+      'title', 'description', 'price', 'location', 'location_note', 'requirements', 'tags',
       'start_date', 'end_date', 'max_participants', 'is_promo', 'is_active',
       'checklist_schema'
     ];
@@ -248,6 +304,33 @@ export const updateOffer = async (req: AuthenticatedRequest, res: Response): Pro
     }
     if (updates.start_date) updates.start_date = new Date(updates.start_date as string);
     if (updates.end_date) updates.end_date = new Date(updates.end_date as string);
+
+    if (updates.location !== undefined || updates.location_note !== undefined) {
+      const nextLocation =
+        updates.location !== undefined ? updates.location : current.location;
+      const noteProvided = updates.location_note !== undefined;
+      const locParsed = parseLocationFields(
+        nextLocation,
+        noteProvided ? updates.location_note : undefined,
+        { noteProvided }
+      );
+      if (!locParsed.ok) {
+        res.status(422).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: locParsed.message }
+        } as ApiErrorResponse);
+        return;
+      }
+      if (updates.location !== undefined) {
+        updates.location = locParsed.location;
+      }
+      if (noteProvided) {
+        updates.location_note = locParsed.location_note ?? null;
+      } else if (updates.location !== undefined && !locParsed.location) {
+        // Адрес очищен — сбрасываем пометку
+        updates.location_note = null;
+      }
+    }
 
     if (updates.checklist_schema !== undefined) {
       const parsed = parseChecklistSchema(updates.checklist_schema);

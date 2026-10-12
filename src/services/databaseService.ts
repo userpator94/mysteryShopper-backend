@@ -757,7 +757,8 @@ export class DatabaseService {
     title: string;
     description?: string;
     price?: number;
-    location?: string;
+    location?: string | null;
+    location_note?: string | null;
     location_points?: unknown | null;
     requirements?: string;
     tags?: string[];
@@ -777,11 +778,11 @@ export class DatabaseService {
         : null;
     const query = `
       INSERT INTO offers (
-        employer_id, title, description, price, location, location_points, requirements, tags,
+        employer_id, title, description, price, location, location_note, location_points, requirements, tags,
         start_date, end_date, max_participants, current_participants, is_promo, image_id, numeric_info, is_active, created_at, updated_at,
         checklist_schema, schema_version
       )
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, $11, 0, $12, $13, $14, TRUE, NOW(), NOW(), $15::jsonb, $16)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, $10, $11, $12, 0, $13, $14, $15, TRUE, NOW(), NOW(), $16::jsonb, $17)
       RETURNING *
     `;
     const price = data.price != null && !Number.isNaN(Number(data.price)) ? Number(data.price) : 0;
@@ -791,12 +792,18 @@ export class DatabaseService {
         : null;
     const schemaVer =
       typeof data.schema_version === 'number' && !Number.isNaN(data.schema_version) ? data.schema_version : 1;
+    const location = data.location?.trim() || null;
+    const locationNote =
+      location && data.location_note != null && String(data.location_note).trim()
+        ? String(data.location_note).trim().slice(0, 300)
+        : null;
     const result = await this.query(query, [
       data.employer_id,
       data.title,
       data.description || null,
       price,
-      data.location || null,
+      location,
+      locationNote,
       locationPointsJson,
       data.requirements || null,
       tagsJson,
@@ -832,7 +839,8 @@ export class DatabaseService {
     title: string;
     description: string;
     price: number;
-    location: string;
+    location: string | null;
+    location_note: string | null;
     requirements: string;
     tags: string[];
     start_date: Date;
@@ -844,7 +852,7 @@ export class DatabaseService {
     schema_version: number;
   }>): Promise<any | null> {
     const allowed = [
-      'title', 'description', 'price', 'location', 'requirements', 'tags',
+      'title', 'description', 'price', 'location', 'location_note', 'requirements', 'tags',
       'start_date', 'end_date', 'max_participants', 'is_promo', 'is_active',
       'checklist_schema', 'schema_version'
     ];
