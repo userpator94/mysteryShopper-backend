@@ -149,6 +149,10 @@ export interface SignupRequest {
   company?: string;
   description?: string;
   website?: string;
+  /** Обязательное принятие оферты */
+  accept_offer?: boolean;
+  /** Версия оферты с GET /api/legal/offers */
+  offer_version?: string;
 }
 
 export interface AuthUser {

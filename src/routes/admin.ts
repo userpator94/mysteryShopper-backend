@@ -4,7 +4,9 @@ import {
   getAdminStatsOverview,
   getAdminApplications,
   getAdminQueues,
-  getAdminUsers
+  getAdminUsers,
+  getAdminLegalDocs,
+  streamAdminLegalDoc
 } from '../controllers/adminController';
 import { authenticateJWT, requireAdmin } from '../middleware/authMiddleware';
 import { adminLoginRateLimiter } from '../middleware/adminLoginRateLimiter';
@@ -35,5 +37,11 @@ router.get('/queues', getAdminQueues);
 
 // GET /api/admin/users
 router.get('/users', getAdminUsers);
+
+// GET /api/admin/legal/docs
+router.get('/legal/docs', getAdminLegalDocs);
+
+// GET /api/admin/legal/docs/:role
+router.get('/legal/docs/:role', streamAdminLegalDoc);
 
 export default router;

@@ -11,6 +11,7 @@ import applicationsRoutes from './applications';
 import reportRoutes from './report';
 import rewardsRoutes from './rewards';
 import adminRoutes from './admin';
+import legalRoutes from './legal';
 
 const router = Router();
 
@@ -70,6 +71,9 @@ router.use('/user/stats', userStatisticsRoutes);
 
 // Authentication routes
 router.use('/', authRoutes);
+
+// Legal offers (public PDFs)
+router.use('/legal', legalRoutes);
 
 // Apply routes
 router.use('/apply', applyRoutes);

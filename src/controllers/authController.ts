@@ -9,6 +9,7 @@ import { normalizePhone, formatPhone } from '../utils/validators';
 import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
 import { normalizeAuthRole } from '../utils/authRole';
 import { config } from '../config';
+import { assertCurrentOfferVersion, getLegalOfferVersion } from '../services/legalOffersService';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -108,8 +109,45 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, lastname, email, phone, password, role: reqRole, company, description, website }: SignupRequest = req.body;
+    const {
+      name,
+      lastname,
+      email,
+      phone,
+      password,
+      role: reqRole,
+      company,
+      description,
+      website,
+      accept_offer,
+      offer_version
+    }: SignupRequest = req.body;
     const role = reqRole === 'employer' ? 'employer' : 'user';
+
+    const acceptOk = accept_offer === true || (accept_offer as unknown) === 'true';
+    if (!acceptOk) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Необходимо принять оферту'
+        }
+      };
+      res.status(422).json(response);
+      return;
+    }
+
+    if (!assertCurrentOfferVersion(offer_version)) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Неверная версия оферты. Актуальная версия: ${getLegalOfferVersion()}`
+        }
+      };
+      res.status(422).json(response);
+      return;
+    }
 
     if (role === 'employer' && !(company && company.trim())) {
       const response: ApiErrorResponse = {
@@ -159,7 +197,9 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       phone: normalizedPhone,
       name: name.trim(),
       lastname: lastname.trim(),
-      role
+      role,
+      offer_accepted_at: new Date(),
+      offer_version: String(offer_version).trim()
     });
 
     if (role === 'employer') {

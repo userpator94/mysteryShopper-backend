@@ -127,7 +127,25 @@ export const signupValidation: ValidationChain[] = [
     .optional()
     .trim()
     .isLength({ max: 500 })
-    .withMessage('URL не более 500 символов')
+    .withMessage('URL не более 500 символов'),
+
+  body('accept_offer')
+    .exists()
+    .withMessage('Необходимо принять оферту')
+    .custom((value) => value === true || value === 'true')
+    .withMessage('Необходимо принять оферту'),
+
+  body('offer_version')
+    .exists()
+    .withMessage('Не указана версия оферты')
+    .bail()
+    .isString()
+    .withMessage('Версия оферты должна быть строкой')
+    .trim()
+    .notEmpty()
+    .withMessage('Не указана версия оферты')
+    .isLength({ max: 32 })
+    .withMessage('Версия оферты не более 32 символов')
 ];
 
 export const changePasswordValidation: ValidationChain[] = [

@@ -688,13 +688,18 @@ export class DatabaseService {
     name: string;
     lastname: string;
     role?: string;
+    offer_accepted_at?: Date | string | null;
+    offer_version?: string | null;
   }): Promise<any> {
     const role = userData.role === 'employer' ? 'employer' : 'user';
     const avatarId = role === 'user' ? pickRandomExecutorAvatarEmoji() : null;
     const query = `
-      INSERT INTO users (email, password_hash, phone, name, surname, is_active, role, avatar_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, NOW(), NOW())
-      RETURNING id, email, phone, name, surname, role, avatar_id, created_at
+      INSERT INTO users (
+        email, password_hash, phone, name, surname, is_active, role, avatar_id,
+        offer_accepted_at, offer_version, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8, $9, NOW(), NOW())
+      RETURNING id, email, phone, name, surname, role, avatar_id, offer_accepted_at, offer_version, created_at
     `;
 
     const result = await this.query(query, [
@@ -704,7 +709,9 @@ export class DatabaseService {
       userData.name,
       userData.lastname,
       role,
-      avatarId
+      avatarId,
+      userData.offer_accepted_at ?? null,
+      userData.offer_version ?? null
     ]);
 
     const savedAvatarId = result.rows[0].avatar_id as string | null;

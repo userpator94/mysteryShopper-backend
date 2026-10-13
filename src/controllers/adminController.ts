@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { Request, Response } from 'express';
 import { LoginRequest, LoginResponse, AuthUser, ApiErrorResponse } from '../types';
 import { dbService } from '../services/databaseService';
@@ -6,6 +7,12 @@ import { adminService } from '../services/adminService';
 import { formatPhone } from '../utils/validators';
 import { normalizeAuthRole } from '../utils/authRole';
 import { config } from '../config';
+import {
+  getLegalOfferContentDisposition,
+  isLegalOfferRole,
+  listLegalOffersAdmin,
+  resolveLegalOfferPath
+} from '../services/legalOffersService';
 
 const INVALID_CREDENTIALS_MSG = 'Неверный логин или пароль';
 
@@ -165,6 +172,71 @@ export const getAdminQueues = async (req: Request, res: Response): Promise<void>
     const response: ApiErrorResponse = {
       success: false,
       error: { code: 'SERVER_ERROR', message: 'Ошибка при загрузке очередей' }
+    };
+    res.status(500).json(response);
+  }
+};
+
+/** GET /api/admin/legal/docs — список оферт на диске */
+export const getAdminLegalDocs = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    res.status(200).json({ success: true, data: listLegalOffersAdmin() });
+  } catch (error: unknown) {
+    console.error('Error in getAdminLegalDocs:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Ошибка при загрузке документов' }
+    };
+    res.status(500).json(response);
+  }
+};
+
+/** GET /api/admin/legal/docs/:role — stream PDF оферты */
+export const streamAdminLegalDoc = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const roleParam = String(req.params.role || '');
+    if (!isLegalOfferRole(roleParam)) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Роль оферты должна быть user или employer'
+        }
+      };
+      res.status(422).json(response);
+      return;
+    }
+
+    let filePath: string;
+    try {
+      filePath = resolveLegalOfferPath(roleParam);
+    } catch {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Оферта не найдена' }
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      const response: ApiErrorResponse = {
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Файл оферты не найден на сервере' }
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', getLegalOfferContentDisposition(roleParam));
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error: unknown) {
+    console.error('Error in streamAdminLegalDoc:', error);
+    const response: ApiErrorResponse = {
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Ошибка при открытии документа' }
     };
     res.status(500).json(response);
   }

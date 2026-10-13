@@ -30,6 +30,12 @@ export const config = {
     frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:5173',
     enabled: process.env.EMAIL_ENABLED !== 'false',
     requireVerification: true
+  },
+
+  /** PDF оферт на диске сервера (whitelist: Оферта_для_Исполнителя.pdf, Оферта_для_Заказчика.pdf) */
+  legal: {
+    pdfsDir: process.env.LEGAL_PDFS_DIR || '/srv/mysteryshopper/pdfs',
+    offerVersion: process.env.LEGAL_OFFER_VERSION || '1'
   }
 };
 
