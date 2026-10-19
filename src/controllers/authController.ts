@@ -10,6 +10,7 @@ import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
 import { normalizeAuthRole } from '../utils/authRole';
 import { config } from '../config';
 import { assertCurrentOfferVersion, getLegalOfferVersion } from '../services/legalOffersService';
+import { buildCommit } from '../utils/buildCommit';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -307,7 +308,8 @@ export const getMe = async (req: AuthenticatedRequest, res: Response): Promise<v
       phone: user.phone ? formatPhone(user.phone) : '',
       role,
       email_verified: Boolean(user.email_verified),
-      avatar_emoji: role === 'user' ? avatarEmojiFromAvatarId(user.avatar_id) : null
+      avatar_emoji: role === 'user' ? avatarEmojiFromAvatarId(user.avatar_id) : null,
+      ...(buildCommit ? { commit: buildCommit } : {})
     };
     if (role === 'employer') {
       const employer = await dbService.getEmployerByUserId(userId);
