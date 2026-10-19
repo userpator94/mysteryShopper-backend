@@ -210,11 +210,61 @@ export class DatabaseService {
   }
 
   /**
+   * Заявки, взятые в работу и оставшиеся без отчёта после календарного дня end_date,
+   * переводятся в expired. Слот при этом освобождается.
+   */
+  async expireOverdueApplications(scope: { userId?: string; offerId?: string }): Promise<void> {
+    const params: unknown[] = [];
+    const filters: string[] = [];
+    if (scope.userId) {
+      params.push(scope.userId);
+      filters.push(`oa.user_id = $${params.length}`);
+    }
+    if (scope.offerId) {
+      params.push(scope.offerId);
+      filters.push(`oa.offer_id = $${params.length}`);
+    }
+    const scopeSql = filters.length ? ` AND ${filters.join(' AND ')}` : '';
+    const updated = await this.query(
+      `UPDATE offer_applications oa
+       SET status = 'expired'
+       FROM offers o
+       WHERE oa.offer_id = o.id
+         AND oa.status IN ('approved', 'in_progress')
+         AND NOT EXISTS (SELECT 1 FROM offer_reports r WHERE r.application_id = oa.id)
+         AND o.end_date::date < CURRENT_DATE
+         ${scopeSql}
+       RETURNING oa.offer_id`,
+      params
+    );
+    const offerIds = [
+      ...new Set(
+        (updated.rows as Array<{ offer_id: string }>)
+          .map((row) => row.offer_id)
+          .filter((id): id is string => Boolean(id))
+      )
+    ];
+    if (!offerIds.length) return;
+    await this.query(
+      `UPDATE offers o
+       SET current_participants = (
+         SELECT COUNT(*)::int
+         FROM offer_applications oa
+         WHERE oa.offer_id = o.id
+           AND oa.status IN ('approved', 'in_progress', 'completed')
+       )
+       WHERE o.id = ANY($1::uuid[])`,
+      [offerIds]
+    );
+  }
+
+  /**
    * Принятые по задаче (approved / in_progress), по которым ещё нет отчёта — «в работе».
    */
   async getOfferInWorkExecutors(
     offerId: string
   ): Promise<Array<{ user_id: string; initials: string; avatar_emoji: string | null }>> {
+    await this.expireOverdueApplications({ offerId });
     const q = `
       SELECT oa.user_id, u.name, u.surname, u.avatar_id
       FROM offer_applications oa
@@ -318,6 +368,8 @@ export class DatabaseService {
       avatar_url: string | null;
     };
     if (row.role !== 'user') return null;
+
+    await this.expireOverdueApplications({ userId: executorUserId });
 
     const suffixRes = await this.query(
       'SELECT RIGHT(REPLACE($1::text, \'-\', \'\'), 4) AS suf',

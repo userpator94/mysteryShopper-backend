@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import pool from '../config/database';
+import { dbService } from './databaseService';
 import { mapReportRowToApiStatus, type ApiReportStatus } from '../utils/reportStatus';
 
 export class ApplyService {
@@ -44,6 +45,14 @@ export class ApplyService {
     const resubmit_used =
       row.resubmit_used != null ? Boolean(row.resubmit_used) : undefined;
 
+    const rawEnd = row.offer_end_date as Date | string | null | undefined;
+    const offer_end_date =
+      rawEnd instanceof Date
+        ? rawEnd.toISOString()
+        : rawEnd != null && String(rawEnd).trim() !== ''
+          ? String(rawEnd)
+          : undefined;
+
     return {
       application_id: row.application_id,
       offer_id: row.offer_id,
@@ -56,7 +65,8 @@ export class ApplyService {
       report_status,
       employer_review_comment,
       can_resubmit,
-      resubmit_used
+      resubmit_used,
+      offer_end_date
     };
   }
 
@@ -127,6 +137,7 @@ export class ApplyService {
 
   // Получить все заявки пользователя (без cancelled)
   async getUserApplications(userId: string): Promise<any[]> {
+    await dbService.expireOverdueApplications({ userId });
     const query = `
       SELECT 
         oa.id as application_id,
@@ -155,6 +166,7 @@ export class ApplyService {
 
   // Получить заявку пользователя по offer_id
   async getUserApplicationByOfferId(userId: string, offerId: string): Promise<any | null> {
+    await dbService.expireOverdueApplications({ userId, offerId });
     const query = `
       SELECT 
         oa.id as application_id,
