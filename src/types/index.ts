@@ -197,8 +197,8 @@ export interface MeResponse {
     company?: string;
     description?: string;
     website?: string;
-    /** Короткий хеш коммита этого процесса. */
-    commit?: string;
+    /** Версия этого процесса. */
+    version: string;
   };
 }
 
