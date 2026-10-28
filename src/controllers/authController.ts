@@ -4,7 +4,7 @@ import { AuthenticatedRequest } from '../middleware/userIdValidator';
 import { dbService } from '../services/databaseService';
 import { authService } from '../services/authService';
 import { issueAuthToken, consumeAuthToken } from '../services/authTokenService';
-import { sendVerificationEmail, sendPasswordResetEmail, sendPasswordChangedEmail } from '../services/emailService';
+import { sendVerificationEmail, sendPasswordResetEmail, sendPasswordChangedEmail, queueEmail } from '../services/emailService';
 import { normalizePhone, formatPhone } from '../utils/validators';
 import { avatarEmojiFromAvatarId } from '../utils/avatarEmoji';
 import { normalizeAuthRole } from '../utils/authRole';
@@ -50,7 +50,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         success: false,
         error: {
           code: 'EMAIL_NOT_VERIFIED',
-          message: 'Подтвердите email. Проверьте почту или запросите письмо повторно.'
+          message:
+            'Подтвердите email. Проверьте почту, включая папку «Спам». Письмо может прийти с задержкой в несколько минут — если его нет, запросите повторно.'
         }
       };
       res.status(403).json(response);
@@ -216,15 +217,13 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       await dbService.setEmailVerified(newUser.id, true);
     } else {
       const verifyToken = await issueAuthToken(newUser.id, 'email_verification');
-      try {
-        await sendVerificationEmail({
+      queueEmail('verification email', () =>
+        sendVerificationEmail({
           to: newUser.email,
           name: newUser.name,
           token: verifyToken
-        });
-      } catch (emailErr) {
-        console.error('Failed to send verification email:', emailErr);
-      }
+        })
+      );
     }
 
     const signupMessage = config.email.requireVerification
@@ -409,14 +408,12 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response): 
 
     await dbService.bumpUserTokenVersion(userId);
 
-    try {
-      await sendPasswordChangedEmail({
+    queueEmail('password-changed email', () =>
+      sendPasswordChangedEmail({
         to: user.email,
         name: user.name || ''
-      });
-    } catch (emailErr) {
-      console.error('Failed to send password-changed email:', emailErr);
-    }
+      })
+    );
 
     res.status(200).json({
       success: true,
@@ -485,15 +482,13 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
 
     if (user && user.is_active && !user.email_verified) {
       const token = await issueAuthToken(user.id, 'email_verification');
-      try {
-        await sendVerificationEmail({
+      queueEmail('resend verification email', () =>
+        sendVerificationEmail({
           to: user.email,
           name: user.name || '',
           token
-        });
-      } catch (emailErr) {
-        console.error('Failed to resend verification email:', emailErr);
-      }
+        })
+      );
     }
 
     res.status(200).json({
@@ -522,15 +517,13 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 
     if (user && user.is_active) {
       const token = await issueAuthToken(user.id, 'password_reset');
-      try {
-        await sendPasswordResetEmail({
+      queueEmail('password reset email', () =>
+        sendPasswordResetEmail({
           to: user.email,
           name: user.name || '',
           token
-        });
-      } catch (emailErr) {
-        console.error('Failed to send password reset email:', emailErr);
-      }
+        })
+      );
     }
 
     res.status(200).json({
@@ -583,14 +576,12 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
     const account = await dbService.getUserEmailNameById(consumed.userId);
     if (account?.email) {
-      try {
-        await sendPasswordChangedEmail({
+      queueEmail('password-changed email', () =>
+        sendPasswordChangedEmail({
           to: account.email,
           name: account.name || ''
-        });
-      } catch (emailErr) {
-        console.error('Failed to send password-changed email:', emailErr);
-      }
+        })
+      );
     }
 
     res.status(200).json({

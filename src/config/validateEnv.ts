@@ -3,7 +3,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 export function validateProductionEnv(): void {
   if (!isProduction) return;
 
-  const required = ['RESEND_API_KEY', 'EMAIL_FROM', 'FRONTEND_URL', 'JWT_SECRET'] as const;
+  // При EMAIL_ENABLED=false (например, Resend недоступен) сервер должен стартовать без ключа.
+  const emailEnabled = process.env.EMAIL_ENABLED !== 'false';
+  const required = emailEnabled
+    ? (['RESEND_API_KEY', 'EMAIL_FROM', 'FRONTEND_URL', 'JWT_SECRET'] as const)
+    : (['JWT_SECRET'] as const);
   const missing = required.filter((key) => !process.env[key]?.trim());
 
   if (missing.length > 0) {

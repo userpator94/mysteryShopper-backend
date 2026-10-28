@@ -67,6 +67,21 @@ export async function sendPasswordChangedEmail(params: {
   });
 }
 
+/** Максимальное время ожидания ответа Resend на одну попытку. */
+const EMAIL_SEND_TIMEOUT_MS = Number(process.env.EMAIL_SEND_TIMEOUT_MS) || 10_000;
+/** Паузы перед повторными попытками в фоне (первая попытка — сразу). */
+const EMAIL_RETRY_DELAYS_MS = [5_000, 30_000];
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}: timeout after ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 async function sendEmail(params: {
   to: string;
   subject: string;
@@ -84,18 +99,50 @@ async function sendEmail(params: {
     return;
   }
 
-  const { error } = await client.emails.send({
-    from: config.email.from,
-    to: params.to,
-    subject: params.subject,
-    html: params.html,
-    text: params.text
-  });
+  const { error } = await withTimeout(
+    client.emails.send({
+      from: config.email.from,
+      to: params.to,
+      subject: params.subject,
+      html: params.html,
+      text: params.text
+    }),
+    EMAIL_SEND_TIMEOUT_MS,
+    'Resend'
+  );
 
   if (error) {
     console.error('Resend send error:', error);
     throw new Error(error.message || 'Failed to send email');
   }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Отправка письма в фоне: HTTP-ответ не ждёт Resend.
+ * При сбое (недоступность, блокировка, таймаут) — несколько повторов с паузой.
+ * Ошибки только логируются, наружу не пробрасываются.
+ */
+export function queueEmail(label: string, send: () => Promise<void>): void {
+  void (async () => {
+    const attempts = EMAIL_RETRY_DELAYS_MS.length + 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await send();
+        if (attempt > 1) console.log(`📧 ${label}: sent on attempt ${attempt}`);
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (attempt === attempts) {
+          console.error(`📧 ${label}: failed after ${attempts} attempts: ${msg}`);
+          return;
+        }
+        console.warn(`📧 ${label}: attempt ${attempt} failed (${msg}), retrying`);
+        await sleep(EMAIL_RETRY_DELAYS_MS[attempt - 1]);
+      }
+    }
+  })();
 }
 
 /** Test helper */
