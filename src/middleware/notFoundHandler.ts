@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { getAllowedOrigins, isOriginAllowed } from '../config/cors';
 
 /**
  * Если preflight дошёл сюда (редко: прокси/CORS), не отдаём JSON 404 — иначе браузер показывает тело ответа на OPTIONS.
@@ -9,12 +10,10 @@ export const notFoundHandler = (
   _next: NextFunction
 ): void => {
   if (req.method === 'OPTIONS') {
-    const origin = process.env.CORS_ORIGIN;
-    if (origin) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
+    const requestOrigin = req.headers.origin;
+    if (typeof requestOrigin === 'string' && isOriginAllowed(requestOrigin, getAllowedOrigins())) {
+      res.setHeader('Access-Control-Allow-Origin', requestOrigin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
-    } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
     const reqHdr = req.headers['access-control-request-headers'];

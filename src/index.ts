@@ -13,6 +13,7 @@ import apiRoutes from './routes';
 import { testConnection } from './config/database';
 import { validateProductionEnv } from './config/validateEnv';
 import { config } from './config';
+import { getAllowedOrigins, isOriginAllowed } from './config/cors';
 
 validateProductionEnv();
 
@@ -23,11 +24,17 @@ if (!config.email.requireVerification) {
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0');
+const allowedOrigins = getAllowedOrigins();
 
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // запросы без Origin (curl, server-to-server) пропускаем
+    if (!origin) return callback(null, true);
+    if (isOriginAllowed(origin, allowedOrigins)) return callback(null, true);
+    return callback(null, false);
+  },
   credentials: true
 }));
 
@@ -124,7 +131,7 @@ const startServer = async () => {
       console.log(`📊 Health check: http://${HOST}:${PORT}/health`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🗄️ Database: ${process.env.DB_NAME || 'msDB'} on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
-      console.log(`🔒 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3000'}`);
+      console.log(`🔒 CORS Origins: ${allowedOrigins.join(', ')}`);
       console.log('📝 Ready to handle requests!');
     });
   } catch (error: any) {
