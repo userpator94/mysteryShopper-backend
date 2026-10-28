@@ -35,8 +35,8 @@ DB_NAME=msDB
 DB_USER=postgres
 DB_PASSWORD=password
 
-# CORS Configuration
-CORS_ORIGIN=http://localhost:3000
+# CORS Configuration (comma-separated list of allowed origins)
+CORS_ORIGIN=https://b2bfb.ru,https://www.b2bfb.ru,https://77-222-43-250.swtest.ru
 ```
 
 4. Set up the PostgreSQL database:
@@ -92,7 +92,7 @@ Main settings are in the `.env` file:
 
 - `PORT` - Server port (default: 3000)
 - `NODE_ENV` - Environment (development/production)
-- `CORS_ORIGIN` - Allowed origins for CORS
+- `CORS_ORIGIN` - Allowed origins for CORS (comma-separated list, e.g. `https://b2bfb.ru,https://www.b2bfb.ru,https://77-222-43-250.swtest.ru`)
 - `JWT_SECRET` - Secret key for JWT tokens
 - `DB_*` - Database settings
 
