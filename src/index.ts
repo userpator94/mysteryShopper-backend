@@ -2,9 +2,11 @@ import './loadEnv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
+import pinoHttp, { startTime } from 'pino-http';
 import compression from 'compression';
 import path from 'path';
+import { randomUUID } from 'crypto';
+import { IncomingMessage } from 'http';
 
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
@@ -14,11 +16,12 @@ import { testConnection } from './config/database';
 import { validateProductionEnv } from './config/validateEnv';
 import { config } from './config';
 import { getAllowedOrigins, isOriginAllowed } from './config/cors';
+import { logger } from './utils/logger';
 
 validateProductionEnv();
 
 if (!config.email.requireVerification) {
-  console.warn('⚠️ REQUIRE_EMAIL_VERIFICATION=false — email verification disabled at login');
+  logger.warn('REQUIRE_EMAIL_VERIFICATION=false — email verification disabled at login');
 }
 
 const app = express();
@@ -44,18 +47,60 @@ app.use(compression());
 // Trust first proxy (nginx) so req.ip reflects real client, not loopback
 app.set('trust proxy', 1);
 
-// Logging middleware
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+
+const resolveRequestId = (header: string | string[] | undefined): string => {
+  const value = Array.isArray(header) ? header[0] : header;
+  if (value && REQUEST_ID_PATTERN.test(value)) return value;
+  return randomUUID();
+};
+
+const responseTimeMs = (res: unknown): number => {
+  const startedAt = (res as { [startTime]?: number })[startTime];
+  return typeof startedAt === 'number' ? Date.now() - startedAt : 0;
+};
+
+// Logging middleware: структурированные JSON-логи + requestId для трассировки
 app.use(
-  morgan((tokens, req, res) => {
-    const rt = Number(tokens['response-time'](req, res) || 0);
-    const line = [
-      tokens.method(req, res),
-      tokens.url(req, res),
-      tokens.status(req, res),
-      `${rt.toFixed(1)}ms`
-    ].join(' ');
-    // Подсветим медленные запросы в логах
-    return rt >= 500 ? `SLOW ${line}` : line;
+  pinoHttp({
+    logger,
+    genReqId: (req, res) => {
+      const id = resolveRequestId(req.headers['x-request-id']);
+      res.setHeader('X-Request-ID', id);
+      return id;
+    },
+    autoLogging: {
+      ignore: (req) => (req.url || '').split('?')[0] === '/health'
+    },
+    customLogLevel: (_req, res, error) => {
+      if (error || res.statusCode >= 500) return 'error';
+      if (res.statusCode >= 400) return 'warn';
+      return responseTimeMs(res) >= 500 ? 'warn' : 'info';
+    },
+    customProps: (req, res) => {
+      const request = req as IncomingMessage & {
+        ip?: string;
+        userId?: string;
+        userRole?: string;
+      };
+      const responseTime = responseTimeMs(res);
+      return {
+        ip: request.ip,
+        userAgent: request.headers['user-agent'],
+        userId: request.userId,
+        userRole: request.userRole,
+        responseTime,
+        slow: responseTime >= 500
+      };
+    },
+    serializers: {
+      req: (req: IncomingMessage & { id?: string }) => ({
+        id: req.id,
+        method: req.method,
+        url: req.url
+      }),
+      res: (res) => ({ statusCode: res.statusCode })
+    }
   })
 );
 
@@ -102,43 +147,57 @@ app.use('/api', apiRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'Unhandled promise rejection');
+});
+
+process.on('uncaughtException', (error) => {
+  logger.fatal({ err: error }, 'Uncaught exception — shutting down');
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received — shutting down');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received — shutting down');
+  process.exit(0);
+});
+
 // Start server
-const startServer = async () => {
-  console.log('🚀 Starting Mystery Shopper Backend Server...');
-  console.log(`📅 Started at: ${new Date().toISOString()}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  
+const startServer = async (): Promise<void> => {
+  logger.info({ port: PORT, host: HOST }, 'Starting Mystery Shopper Backend Server');
+
   try {
-    console.log('🔍 Step 1: Testing database connection...');
-    // Test database connection
+    logger.info('Step 1: testing database connection');
     const dbConnected = await testConnection();
     if (!dbConnected) {
-      console.error('❌ CRITICAL: Failed to connect to database. Server will not start.');
-      console.error('💡 Please check:');
-      console.error('   1. PostgreSQL is running');
-      console.error('   2. Database credentials are correct');
-      console.error('   3. Database exists');
-      console.error('   4. Network connectivity');
+      logger.fatal({
+        dbHost: process.env.DB_HOST || 'localhost',
+        dbPort: process.env.DB_PORT || '5432',
+        dbName: process.env.DB_NAME || 'msDB'
+      }, 'Failed to connect to database — server will not start');
       process.exit(1);
     }
-    
-    console.log('✅ Step 1 completed: Database connection successful');
-    console.log('🔍 Step 2: Starting Express server...');
+
+    logger.info('Step 1 completed: database connection successful');
+    logger.info('Step 2: starting Express server');
 
     app.listen(PORT, HOST, () => {
-      console.log('🎉 SERVER STARTED SUCCESSFULLY!');
-      console.log(`🚀 Server is running on ${HOST}:${PORT}`);
-      console.log(`📊 Health check: http://${HOST}:${PORT}/health`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🗄️ Database: ${process.env.DB_NAME || 'msDB'} on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
-      console.log(`🔒 CORS Origins: ${allowedOrigins.join(', ')}`);
-      console.log('📝 Ready to handle requests!');
+      logger.info({
+        host: HOST,
+        port: PORT,
+        healthCheck: `http://${HOST}:${PORT}/health`,
+        dbHost: process.env.DB_HOST || 'localhost',
+        dbPort: process.env.DB_PORT || '5432',
+        dbName: process.env.DB_NAME || 'msDB',
+        corsOrigins: allowedOrigins
+      }, 'Server started successfully');
     });
-  } catch (error: any) {
-    console.error('❌ CRITICAL ERROR during server startup:');
-    console.error(`   Error: ${error.message}`);
-    console.error(`   Stack: ${error.stack}`);
-    console.error('💡 Server failed to start. Please check the logs above.');
+  } catch (error: unknown) {
+    logger.fatal({ err: error }, 'Critical error during server startup');
     process.exit(1);
   }
 };

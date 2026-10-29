@@ -6,6 +6,7 @@ import { authService } from '../services/authService';
 import { adminService } from '../services/adminService';
 import { formatPhone } from '../utils/validators';
 import { normalizeAuthRole } from '../utils/authRole';
+import { getRequestLogger, maskEmail } from '../utils/logger';
 import { config } from '../config';
 import {
   getLegalOfferContentDisposition,
@@ -21,12 +22,24 @@ const INVALID_CREDENTIALS_MSG = 'Неверный логин или пароль
  * Нейтральные ошибки, без утечки существования email.
  */
 export const adminLogin = async (req: Request, res: Response): Promise<void> => {
+  const log = getRequestLogger(req);
+  const startedAt = Date.now();
+
   try {
     const { email, password }: LoginRequest = req.body;
+    const maskedEmail = maskEmail(email);
 
+    const dbStartedAt = Date.now();
     const user = await dbService.getUserByEmail(email);
+    const dbMs = Date.now() - dbStartedAt;
 
     if (!user || !user.is_active) {
+      log.warn({
+        event: 'auth.admin_login',
+        outcome: user ? 'inactive' : 'user_not_found',
+        email: maskedEmail,
+        dbMs
+      }, 'Admin login rejected');
       const response: ApiErrorResponse = {
         success: false,
         error: {
@@ -38,8 +51,18 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    const passwordStartedAt = Date.now();
     const isPasswordValid = await authService.comparePassword(password, user.password_hash);
+    const passwordMs = Date.now() - passwordStartedAt;
     if (!isPasswordValid) {
+      log.warn({
+        event: 'auth.admin_login',
+        outcome: 'bad_password',
+        email: maskedEmail,
+        userId: user.id,
+        dbMs,
+        passwordMs
+      }, 'Admin login rejected');
       const response: ApiErrorResponse = {
         success: false,
         error: {
@@ -52,6 +75,13 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
     }
 
     if (user.role !== 'admin') {
+      log.warn({
+        event: 'auth.admin_login',
+        outcome: 'not_admin',
+        email: maskedEmail,
+        userId: user.id,
+        role: user.role
+      }, 'Admin login rejected');
       const response: ApiErrorResponse = {
         success: false,
         error: {
@@ -64,6 +94,12 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
     }
 
     if (config.email.requireVerification && !user.email_verified) {
+      log.warn({
+        event: 'auth.admin_login',
+        outcome: 'email_not_verified',
+        email: maskedEmail,
+        userId: user.id
+      }, 'Admin login rejected');
       const response: ApiErrorResponse = {
         success: false,
         error: {
@@ -92,7 +128,16 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
     );
     const expiresIn = authService.getTokenExpiresIn();
 
-    console.log(`✅ Admin logged in: ${user.email} (ID: ${user.id})`);
+    log.info({
+      event: 'auth.admin_login',
+      outcome: 'success',
+      email: maskedEmail,
+      userId: user.id,
+      role,
+      dbMs,
+      passwordMs,
+      totalMs: Date.now() - startedAt
+    }, 'Admin logged in');
 
     const response: LoginResponse = {
       success: true,
@@ -104,7 +149,13 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
     };
     res.status(200).json(response);
   } catch (error: unknown) {
-    console.error('Error in adminLogin:', error);
+    log.error({
+      event: 'auth.admin_login',
+      outcome: 'error',
+      email: maskEmail(req.body?.email),
+      totalMs: Date.now() - startedAt,
+      err: error
+    }, 'Error in adminLogin');
     const response: ApiErrorResponse = {
       success: false,
       error: {

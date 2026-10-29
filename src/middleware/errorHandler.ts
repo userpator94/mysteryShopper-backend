@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { getRequestLogger, sanitizeForLog } from '../utils/logger';
 
 export interface AppError extends Error {
   statusCode?: number;
@@ -14,29 +15,36 @@ export const errorHandler = (
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
   const timestamp = new Date().toISOString();
+  const log = getRequestLogger(req);
 
-  // Детальное логирование ошибки
-  console.error('🚨 ERROR OCCURRED:');
-  console.error(`   Timestamp: ${timestamp}`);
-  console.error(`   Status Code: ${statusCode}`);
-  console.error(`   Message: ${message}`);
-  console.error(`   URL: ${req.method} ${req.url}`);
-  console.error(`   IP: ${req.ip}`);
-  console.error(`   User Agent: ${req.get('User-Agent')}`);
-  console.error('   Stack Trace:', err.stack);
-  
-  // Логирование тела запроса для POST/PUT запросов
+  const errorMeta: Record<string, unknown> = {
+    event: 'http.error',
+    statusCode,
+    method: req.method,
+    url: req.url,
+    ip: req.ip,
+    userAgent: req.get('User-Agent'),
+    userId: (req as Request & { userId?: string }).userId,
+    errorName: err.name,
+    errorCode: (err as AppError & { code?: string }).code,
+    isOperational: err.isOperational
+  };
+
+  // Тело запроса логируем только для мутирующих методов и с маскированием секретов
   if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
-    console.error('   Request Body:', JSON.stringify(req.body, null, 2));
+    errorMeta.requestBody = sanitizeForLog(req.body);
+  }
+  if (Object.keys(req.params).length > 0) {
+    errorMeta.params = sanitizeForLog(req.params);
+  }
+  if (Object.keys(req.query).length > 0) {
+    errorMeta.query = sanitizeForLog(req.query);
   }
 
-  // Логирование параметров запроса
-  if (Object.keys(req.params).length > 0) {
-    console.error('   Params:', req.params);
-  }
-  
-  if (Object.keys(req.query).length > 0) {
-    console.error('   Query:', req.query);
+  if (statusCode >= 500) {
+    log.error({ ...errorMeta, err }, message);
+  } else {
+    log.warn(errorMeta, message);
   }
 
   res.status(statusCode).json({

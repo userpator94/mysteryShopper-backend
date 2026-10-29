@@ -11,13 +11,20 @@ import { normalizeAuthRole } from '../utils/authRole';
 import { config } from '../config';
 import { assertCurrentOfferVersion, getLegalOfferVersion } from '../services/legalOffersService';
 import { BACKEND_VERSION } from '../config/appVersion';
+import { getRequestLogger, maskEmail } from '../utils/logger';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
+  const log = getRequestLogger(req);
+  const startedAt = Date.now();
+
   try {
     const { email, password }: LoginRequest = req.body;
+    const maskedEmail = maskEmail(email);
 
     // Получаем пользователя по email
+    const dbStartedAt = Date.now();
     const user = await dbService.getUserByEmail(email);
+    const dbMs = Date.now() - dbStartedAt;
 
     // Единый ответ — без enumeration (нет пользователя / неактивен / неверный пароль)
     const invalidCredentials = (): void => {
@@ -32,20 +39,44 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     };
 
     if (!user || !user.is_active) {
+      log.warn({
+        event: 'auth.login',
+        outcome: user ? 'inactive' : 'user_not_found',
+        email: maskedEmail,
+        dbMs
+      }, 'Login rejected');
       invalidCredentials();
       return;
     }
 
     // Проверяем пароль
+    const passwordStartedAt = Date.now();
     const isPasswordValid = await authService.comparePassword(password, user.password_hash);
-    
+    const passwordMs = Date.now() - passwordStartedAt;
+
     if (!isPasswordValid) {
+      log.warn({
+        event: 'auth.login',
+        outcome: 'bad_password',
+        email: maskedEmail,
+        userId: user.id,
+        dbMs,
+        passwordMs
+      }, 'Login rejected');
       invalidCredentials();
       return;
     }
 
     // Проверяем подтверждение email (можно временно отключить через REQUIRE_EMAIL_VERIFICATION=false)
     if (config.email.requireVerification && !user.email_verified) {
+      log.warn({
+        event: 'auth.login',
+        outcome: 'email_not_verified',
+        email: maskedEmail,
+        userId: user.id,
+        dbMs,
+        passwordMs
+      }, 'Login rejected');
       const response: ApiErrorResponse = {
         success: false,
         error: {
@@ -77,7 +108,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const expiresIn = authService.getTokenExpiresIn();
 
     // Логируем успешный вход (без пароля)
-    console.log(`✅ User logged in: ${user.email} (ID: ${user.id}, role: ${role})`);
+    log.info({
+      event: 'auth.login',
+      outcome: 'success',
+      email: maskedEmail,
+      userId: user.id,
+      role,
+      dbMs,
+      passwordMs,
+      totalMs: Date.now() - startedAt
+    }, 'User logged in');
 
     const response: LoginResponse = {
       success: true,
@@ -90,12 +130,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     res.status(200).json(response);
   } catch (error: any) {
-    console.error('Error in login:', error);
-    console.error('Error details:', {
-      message: error?.message,
-      code: error?.code,
-      stack: error?.stack
-    });
+    log.error({
+      event: 'auth.login',
+      outcome: 'error',
+      email: maskEmail(req.body?.email),
+      totalMs: Date.now() - startedAt,
+      err: error
+    }, 'Error in login');
     const response: ApiErrorResponse = {
       success: false,
       error: {

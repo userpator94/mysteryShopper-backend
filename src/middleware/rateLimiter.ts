@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import { getRequestLogger } from '../utils/logger';
 
 // Simple in-memory rate limiter (for production, consider using Redis)
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
@@ -61,6 +62,12 @@ export const rateLimiter = (
   }
 
   if (clientData.count >= RATE_LIMIT_MAX_REQUESTS) {
+    getRequestLogger(req).warn({
+      event: 'http.rate_limited',
+      clientId,
+      limit: RATE_LIMIT_MAX_REQUESTS,
+      retryAfterSec: Math.ceil((clientData.resetTime - now) / 1000)
+    }, 'Rate limit exceeded');
     res.status(429).json({
       success: false,
       error: {

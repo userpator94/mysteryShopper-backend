@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { getAllowedOrigins, isOriginAllowed } from '../config/cors';
+import { getRequestLogger } from '../utils/logger';
 
 /**
  * Если preflight дошёл сюда (редко: прокси/CORS), не отдаём JSON 404 — иначе браузер показывает тело ответа на OPTIONS.
@@ -28,7 +29,11 @@ export const notFoundHandler = (
   }
 
   if (req.originalUrl.startsWith('/api')) {
-    console.warn('[404 API]', req.method, req.originalUrl);
+    getRequestLogger(req).warn({
+      event: 'http.not_found',
+      method: req.method,
+      url: req.originalUrl
+    }, 'API route not found');
   }
 
   res.status(404).json({
