@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { config } from '../config';
+import { logger, maskEmail } from '../utils/logger';
 import {
   passwordChangedEmailHtml,
   passwordChangedEmailText,
@@ -89,13 +90,23 @@ async function sendEmail(params: {
   text: string;
 }): Promise<void> {
   if (!config.email.enabled) {
-    console.log(`📧 Email disabled — would send to ${params.to}: ${params.subject}`);
+    logger.info({
+      event: 'email.skipped',
+      reason: 'disabled',
+      to: maskEmail(params.to),
+      subject: params.subject
+    }, 'Email disabled — not sent');
     return;
   }
 
   const client = getResend();
   if (!client) {
-    console.warn(`📧 RESEND_API_KEY not set — skipping email to ${params.to}`);
+    logger.warn({
+      event: 'email.skipped',
+      reason: 'missing_api_key',
+      to: maskEmail(params.to),
+      subject: params.subject
+    }, 'RESEND_API_KEY not set — email skipped');
     return;
   }
 
@@ -112,7 +123,12 @@ async function sendEmail(params: {
   );
 
   if (error) {
-    console.error('Resend send error:', error);
+    logger.error({
+      event: 'email.send_failed',
+      to: maskEmail(params.to),
+      subject: params.subject,
+      err: error
+    }, 'Resend send error');
     throw new Error(error.message || 'Failed to send email');
   }
 }
@@ -130,15 +146,17 @@ export function queueEmail(label: string, send: () => Promise<void>): void {
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         await send();
-        if (attempt > 1) console.log(`📧 ${label}: sent on attempt ${attempt}`);
+        if (attempt > 1) {
+          logger.info({ event: 'email.sent', label, attempt }, 'Email sent after retry');
+        }
         return;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (attempt === attempts) {
-          console.error(`📧 ${label}: failed after ${attempts} attempts: ${msg}`);
+          logger.error({ event: 'email.failed', label, attempts, errorMessage: msg }, 'Email failed after retries');
           return;
         }
-        console.warn(`📧 ${label}: attempt ${attempt} failed (${msg}), retrying`);
+        logger.warn({ event: 'email.retry', label, attempt, errorMessage: msg }, 'Email attempt failed — retrying');
         await sleep(EMAIL_RETRY_DELAYS_MS[attempt - 1]);
       }
     }

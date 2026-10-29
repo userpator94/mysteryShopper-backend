@@ -64,6 +64,7 @@ const responseTimeMs = (res: unknown): number => {
 app.use(
   pinoHttp({
     logger,
+    quietReqLogger: true,
     genReqId: (req, res) => {
       const id = resolveRequestId(req.headers['x-request-id']);
       res.setHeader('X-Request-ID', id);
@@ -89,7 +90,6 @@ app.use(
         userAgent: request.headers['user-agent'],
         userId: request.userId,
         userRole: request.userRole,
-        responseTime,
         slow: responseTime >= 500
       };
     },

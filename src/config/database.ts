@@ -1,4 +1,5 @@
 import { Pool, PoolConfig } from 'pg';
+import { logger } from '../utils/logger';
 
 const dbConfig: PoolConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -18,39 +19,43 @@ export const pool = new Pool(dbConfig);
 
 // Обработка ошибок пула
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
+  logger.fatal({ err }, 'Unexpected error on idle database client');
   process.exit(-1);
 });
 
+const dbTarget = (): string => `${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`;
+
+const connectionSuggestion = (code?: string): string | undefined => {
+  if (code === 'ECONNREFUSED') return 'Make sure PostgreSQL is running and accessible';
+  if (code === 'ENOTFOUND') return 'Check if the database host is correct';
+  if (code === '28P01') return 'Check username and password';
+  if (code === '3D000') return 'Check if the database exists';
+  return undefined;
+};
+
 // Функция для тестирования подключения
 export const testConnection = async (): Promise<boolean> => {
-  console.log('🔍 Testing database connection...');
-  console.log(`📊 Database config: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
-  
+  logger.info({ event: 'db.connect', target: dbTarget() }, 'Testing database connection');
+
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT NOW() as current_time, version() as postgres_version');
-    console.log('✅ Database connected successfully!');
-    console.log(`⏰ Current time: ${result.rows[0].current_time}`);
-    console.log(`🐘 PostgreSQL version: ${result.rows[0].postgres_version}`);
+    logger.info({
+      event: 'db.connected',
+      target: dbTarget(),
+      serverTime: result.rows[0].current_time,
+      postgresVersion: result.rows[0].postgres_version
+    }, 'Database connected successfully');
     client.release();
     return true;
   } catch (err: any) {
-    console.error('❌ Database connection failed:');
-    console.error(`   Error code: ${err.code || 'UNKNOWN'}`);
-    console.error(`   Error message: ${err.message}`);
-    console.error(`   Connection details: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
-    
-    if (err.code === 'ECONNREFUSED') {
-      console.error('💡 Suggestion: Make sure PostgreSQL is running and accessible');
-    } else if (err.code === 'ENOTFOUND') {
-      console.error('💡 Suggestion: Check if the database host is correct');
-    } else if (err.code === '28P01') {
-      console.error('💡 Suggestion: Check username and password');
-    } else if (err.code === '3D000') {
-      console.error('💡 Suggestion: Check if the database exists');
-    }
-    
+    logger.error({
+      event: 'db.connection_failed',
+      target: dbTarget(),
+      errorCode: err.code || 'UNKNOWN',
+      suggestion: connectionSuggestion(err.code),
+      err
+    }, 'Database connection failed');
     return false;
   }
 };
